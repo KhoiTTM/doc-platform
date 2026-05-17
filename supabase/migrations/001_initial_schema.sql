@@ -1,61 +1,50 @@
--- doc-platform initial database schema (PostgreSQL) - RESET & REBUILD SCRIPT
+-- doc-platform database schema (PostgreSQL) - Simplified Folder/Document structure
 -- Location: supabase/migrations/001_initial_schema.sql
 
 -- =========================================================================
--- BƯỚC 1: XÓA SẠCH CẤU TRÚC LỖI CŨ (Để tránh lỗi 'already exists' khi chạy lại)
+-- BƯỚC 1: XÓA SẠCH CẤU TRÚC PHỨC TẠP CŨ
 -- =========================================================================
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user() cascade;
 drop table if exists public.wiki_documents cascade;
-drop table if exists public.pipeline_steps cascade;
+drop table if exists public.folders cascade;
 drop table if exists public.profiles cascade;
 drop type if exists user_role cascade;
 
--- Xóa tài khoản ladochoi@gmail.com cũ trong auth.users nếu đã tạo lỗi trước đó
+-- Dọn dẹp user ladochoi@gmail.com cũ nếu có trong auth.users để tạo mới sạch sẽ
 delete from auth.users where email = 'ladochoi@gmail.com';
 
 -- =========================================================================
--- BƯỚC 2: KHỞI TẠO CẤU TRÚC MỚI CHUẨN XÁC
+-- BƯỚC 2: KHỞI TẠO CẤU TRÚC THƯ MỤC & TÀI LIỆU ĐƠN GIẢN
 -- =========================================================================
 
 -- Kích hoạt tiện ích mã hóa
 create extension if not exists "pgcrypto";
 
--- Định nghĩa các Vai trò Chuyên môn
-create type user_role as enum ('data_engineer', 'data_ops', 'qc_analyst', 'viewer');
-
--- Bảng Profiles (Đồng bộ 1:1 với auth.users)
+-- Bảng Profiles lưu thông tin cá nhân (Đồng bộ 1:1 từ auth.users)
 create table public.profiles (
   id uuid primary key references auth.users on delete cascade,
   email text not null,
   display_name text,
-  role user_role not null default 'viewer',
   created_at timestamptz not null default now()
 );
 
--- Bảng 6 Bước Pipeline
-create table public.pipeline_steps (
-  step_number int primary key check (step_number between 1 and 6),
-  step_name text not null,
-  platform text not null,
-  trigger_type text not null,
-  sla_minutes int not null,
-  critical_level text not null default 'High',
-  dependency_logic text,
-  description text
+-- Bảng Folders hỗ trợ lồng nhau (Folder & Sub-folders)
+create table public.folders (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  parent_id uuid references public.folders(id) on delete cascade, -- Liên kết đến thư mục cha (cho phép lồng vô hạn)
+  created_at timestamptz not null default now()
 );
 
--- Bảng Wiki Tài liệu / Hướng dẫn Vận hành
+-- Bảng Wiki Documents thuộc về thư mục
 create table public.wiki_documents (
   id uuid primary key default gen_random_uuid(),
-  step_number int references public.pipeline_steps(step_number) on delete set null,
+  folder_id uuid references public.folders(id) on delete cascade, -- Liên kết đến thư mục chứa tệp này
   title text not null,
   slug text not null unique,
-  category text not null check (category in ('infrastructure', 'dbt', 'operations', 'qc_testing', 'general')),
-  content text not null,
-  file_url text,
-  author_id uuid references public.profiles(id) on delete set null,
-  is_pinned boolean not null default false,
+  content text not null, -- Markdown
+  file_url text, -- File đính kèm từ Supabase Storage
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -67,25 +56,16 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  assigned_role user_role;
 begin
-  assigned_role := coalesce(
-    nullif(trim(new.raw_user_meta_data->>'role'), '')::user_role,
-    'viewer'::user_role
-  );
-
-  insert into public.profiles (id, email, display_name, role)
+  insert into public.profiles (id, email, display_name)
   values (
     new.id,
     new.email,
-    coalesce(nullif(trim(new.raw_user_meta_data->>'display_name'), ''), split_part(new.email, '@', 1)),
-    assigned_role
+    coalesce(nullif(trim(new.raw_user_meta_data->>'display_name'), ''), split_part(new.email, '@', 1))
   )
   on conflict (id) do update set
     email = excluded.email,
-    display_name = coalesce(public.profiles.display_name, excluded.display_name),
-    role = coalesce(public.profiles.role, excluded.role);
+    display_name = coalesce(public.profiles.display_name, excluded.display_name);
 
   return new;
 end;
@@ -95,55 +75,52 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
--- Thiết lập bảo mật Row Level Security (RLS)
+-- Bật Row Level Security (RLS) bảo mật mức tài khoản
 alter table public.profiles enable row level security;
-alter table public.pipeline_steps enable row level security;
+alter table public.folders enable row level security;
 alter table public.wiki_documents enable row level security;
 
--- Cấp quyền đọc ghi chuẩn hóa
-create policy "allow_read_all_steps" on public.pipeline_steps for select using (auth.role() = 'authenticated');
-create policy "allow_read_all_wiki" on public.wiki_documents for select using (auth.role() = 'authenticated');
-create policy "allow_read_own_profile" on public.profiles for select using (auth.uid() = id);
-
-create policy "ops_engineer_write_steps" on public.pipeline_steps
-  for all using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role in ('data_engineer', 'data_ops')
-    )
-  );
-
-create policy "staff_write_wiki" on public.wiki_documents
-  for all using (
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and role in ('data_engineer', 'data_ops', 'qc_analyst')
-    )
-  );
-
-create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id);
+-- Quyền truy cập: Chỉ cần Đã Đăng Nhập là có toàn quyền (Xem, Thêm, Sửa, Xóa) cho mục đích cá nhân
+create policy "authenticated_full_profiles" on public.profiles for all using (auth.role() = 'authenticated');
+create policy "authenticated_full_folders" on public.folders for all using (auth.role() = 'authenticated');
+create policy "authenticated_full_wiki" on public.wiki_documents for all using (auth.role() = 'authenticated');
 
 -- =========================================================================
--- BƯỚC 3: NẠP DỮ LIỆU ĐẶC THẢ LUỒNG ETL (SEED STEPS & WIKIS)
+-- BƯỚC 3: NẠP SẴN CẤU TRÚC THƯ MỤC & FILE CHO LUỒNG ETL CỦA PHÒNG DATA
 -- =========================================================================
 
--- Seed data: Pipeline Steps
-insert into public.pipeline_steps (step_number, step_name, platform, trigger_type, sla_minutes, critical_level, dependency_logic, description) values
-  (1, 'AX Data Extraction', 'Synapse Pipeline', 'Scheduled (06:00 AM)', 45, 'High', 'None', 'Extract incremental / full data from AX ERP and store raw files into ADLS Gen2 Bronze layer.'),
-  (2, 'Trigger Databricks Job', 'Synapse Pipeline', 'API Call', 2, 'High', 'On Success of Step 1', 'Synapse calls Databricks Job API after extraction completes successfully.'),
-  (3, 'dbt Model Execution', 'Azure Databricks', 'Internal Job Task', 30, 'High', 'On Success of Step 2', 'dbt runs Bronze → Silver → Gold transformations on Azure Databricks Spark SQL Warehouse.'),
-  (4, 'Gold Data Availability', 'Synapse SQL External', 'Automatic', 1, 'High', 'Automatic path-mapping', 'Synapse serverless views and external tables read latest Gold data paths automatically.'),
-  (5, 'Analysis Services Refresh', 'AS Tabular Model', 'Scheduled (08:00 AM)', 20, 'High', 'None (Vulnerability: runs strictly at 08:00 AM)', 'Process semantic model so latest Gold data is loaded into the AAS tabular database.'),
-  (6, 'Power BI Live Report Ready', 'Power BI Services', 'Automatic', 1, 'High', 'On Success of Step 5', 'Power BI reports query latest processed AS model via active live connection.');
+-- 1. Tạo các Thư mục gốc (Root Folders) cho 5 chặng của luồng ETL
+insert into public.folders (id, name, parent_id) values
+  ('11111111-1111-1111-1111-000000000001', '01. Data Extraction (Bronze)', null),
+  ('11111111-1111-1111-1111-000000000002', '02. dbt Transformation (Silver-Gold)', null),
+  ('11111111-1111-1111-1111-000000000003', '03. Serving Layer (Synapse SQL)', null),
+  ('11111111-1111-1111-1111-000000000004', '04. Semantic Layer (AAS)', null),
+  ('11111111-1111-1111-1111-000000000005', '05. BI Reporting (Power BI)', null);
 
--- Seed data: Detailed Viet Wikis
-insert into public.wiki_documents (id, step_number, title, slug, category, content, file_url) values
+-- 2. Tạo các Thư mục con (Sub-folders)
+insert into public.folders (id, name, parent_id) values
+  -- Thư mục con của 01. Data Extraction
+  ('22222222-2222-2222-2222-000000000011', 'Synapse Pipelines', '11111111-1111-1111-1111-000000000001'),
+  ('22222222-2222-2222-2222-000000000012', 'AX ERP Source DB', '11111111-1111-1111-1111-000000000001'),
+  -- Thư mục con của 02. dbt Transformation
+  ('22222222-2222-2222-2222-000000000021', 'dbt Models & Lineage', '11111111-1111-1111-1111-000000000002'),
+  ('22222222-2222-2222-2222-000000000022', 'Databricks Jobs API', '11111111-1111-1111-1111-000000000002'),
+  -- Thư mục con của 03. Serving Layer
+  ('22222222-2222-2222-2222-000000000031', 'External Tables DDL', '11111111-1111-1111-1111-000000000003'),
+  -- Thư mục con của 04. Semantic Layer
+  ('22222222-2222-2222-2222-000000000041', 'AAS Models & DAX', '11111111-1111-1111-1111-000000000004'),
+  ('22222222-2222-2222-2222-000000000042', 'Refresh Schedules', '11111111-1111-1111-1111-000000000004'),
+  -- Thư mục con của 05. BI Reporting
+  ('22222222-2222-2222-2222-000000000051', 'Power BI QC Checklists', '11111111-1111-1111-1111-000000000005');
+
+-- 3. Tạo sẵn các file Hướng dẫn vận hành đặt vào các Thư mục tương ứng
+insert into public.wiki_documents (id, folder_id, title, slug, content, file_url) values
+  -- File đặt trong 01. Extraction -> AX ERP Source DB
   (
-    '11111111-1111-1111-1111-111111111111',
-    1,
+    '33333333-3333-3333-3333-000000000001',
+    '22222222-2222-2222-2222-000000000012',
     'AX Data Extraction Setup & Troubleshooting',
     'ax-data-extraction-guide',
-    'infrastructure',
     '# Hướng dẫn Vận hành AX Data Extraction
 
 Dữ liệu nguồn được trích xuất hàng ngày lúc **06:00 AM** từ hệ thống ERP AX thông qua Azure Synapse Integration Runtime (Gateway).
@@ -168,12 +145,13 @@ Dữ liệu nguồn được trích xuất hàng ngày lúc **06:00 AM** từ h�
 - **Cách khắc phục**: Liên hệ đội Database Admin của AX để kiểm tra các tiến trình bảo trì (Maintenance jobs). Chạy lại pipeline thủ công sau khi AX ERP mở khóa.',
     null
   ),
+  
+  -- File đặt trong 02. dbt -> Databricks Jobs API
   (
-    '22222222-2222-2222-2222-222222222222',
-    2,
+    '33333333-3333-3333-3333-000000000002',
+    '22222222-2222-2222-2222-000000000022',
     'Synapse Trigger Databricks Job API Integration',
     'synapse-databricks-trigger-api',
-    'operations',
     '# Hướng dẫn Kết nối & Trigger Databricks Job từ Synapse
 
 Sau khi Step 1 thành công, Synapse sẽ gửi một API Call tới Azure Databricks để kích hoạt dbt run job.
@@ -202,12 +180,13 @@ Khi Databricks Personal Access Token (PAT) hết hạn:
 3. Synapse sẽ tự động nạp Token mới trong lượt chạy tiếp theo thông qua Key Vault Integration.',
     null
   ),
+
+  -- File đặt trong 02. dbt -> dbt Models & Lineage
   (
-    '33333333-3333-3333-3333-333333333333',
-    3,
+    '33333333-3333-3333-3333-000000000003',
+    '22222222-2222-2222-2222-000000000021',
     'dbt Transformations on Azure Databricks (Bronze -> Gold)',
     'dbt-transformations-databricks',
-    'dbt',
     '# Quy trình Biến đổi Dữ liệu với dbt thông qua Databricks
 
 dbt (data build tool) chịu trách nhiệm chính trong việc đọc dữ liệu thô tại tầng Bronze, làm sạch, chuẩn hóa và đưa lên các bảng Delta Lake (Silver & Gold).
@@ -229,12 +208,13 @@ dbt (data build tool) chịu trách nhiệm chính trong việc đọc dữ li�
   - *Giải pháp*: Tăng kích thước cluster trong Azure Databricks Job Settings hoặc tối ưu hóa truy vấn Spark SQL (sử dụng partition và partition pruning).',
     null
   ),
+
+  -- File đặt trong 03. Serving -> External Tables DDL
   (
-    '44444444-4444-4444-4444-444444444444',
-    4,
+    '33333333-3333-3333-3333-000000000004',
+    '22222222-2222-2222-2222-000000000031',
     'Synapse Serverless External Tables Configuration',
     'synapse-external-tables-config',
-    'infrastructure',
     '# Cấu hình Lớp Serving với Synapse External Tables
 
 Tầng Gold lưu trữ dữ liệu dạng Deltatable trên ADLS Gen2. Để Analysis Services có thể truy vấn bằng SQL tiêu chuẩn, chúng ta tạo các External Tables trên Synapse Serverless SQL.
@@ -260,12 +240,13 @@ WITH (
 - Nếu không truy cập được dữ liệu, kiểm tra quyền hạn Managed Identity của Synapse Workspace trên ADLS Gen2 container (phải có quyền *Storage Blob Data Contributor*).',
     null
   ),
+
+  -- File đặt trong 04. Semantic -> Refresh Schedules
   (
-    '55555555-5555-5555-5555-555555555555',
-    5,
+    '33333333-3333-3333-3333-000000000005',
+    '22222222-2222-2222-2222-000000000042',
     'Analysis Services Tabular Model Processing Runbook',
     'analysis-services-tabular-processing',
-    'operations',
     '# Hướng dẫn Vận hành & Cập nhật Analysis Services (AS) Tabular Model
 
 Tabular Model trên Analysis Services (AAS) thực hiện nén dữ liệu, tính toán các Measure (DAX) nghiệp vụ và cung cấp giao thức truy vấn hiệu năng cao cho Power BI.
@@ -294,12 +275,13 @@ Tabular Model trên Analysis Services (AAS) thực hiện nén dữ liệu, tín
 ```',
     null
   ),
+
+  -- File đặt trong 05. Reporting -> Power BI QC Checklists
   (
-    '66666666-6666-6666-6666-666666666666',
-    6,
+    '33333333-3333-3333-3333-000000000006',
+    '22222222-2222-2222-2222-000000000051',
     'Power BI Live Connection & Report Updates Guidelines',
     'power-bi-live-connection-guidelines',
-    'qc_testing',
     '# Hướng dẫn Tối ưu & QC Báo cáo Power BI Live Connection
 
 Các báo cáo Power BI kết nối trực tiếp đến mô hình AAS (Analysis Services) theo dạng Live Connection.
@@ -317,7 +299,8 @@ Nếu người dùng báo cáo dữ liệu chưa cập nhật sau 08:30 AM:
   );
 
 -- =========================================================================
--- BƯỚC 4: TẠO USER LADOCHOI ĐÃ XÁC NHẬN EMAIL (BYPASS CONFIRMATION)
+-- BƯỚC 4: TẠO USER LADOCHOI ĐỒNG BỘ HOÀN CHỈNH (BYPASS CONFIRMATION)
+-- LƯU Ý: ĐỂ CHẮC CHẮN TRÁNH LỖI SCHEMA, CHÚNG TA THÊM ĐẦY ĐỦ CÁC CỘT HỆ THỐNG
 -- =========================================================================
 INSERT INTO auth.users (
   id,
@@ -332,9 +315,13 @@ INSERT INTO auth.users (
   created_at,
   updated_at,
   is_super_admin,
-  phone
+  phone,
+  confirmation_token,
+  email_change,
+  email_change_token_new,
+  recovery_token
 ) VALUES (
-  gen_random_uuid(),
+  '99999999-9999-9999-9999-999999999999',
   '00000000-0000-0000-0000-000000000000',
   'authenticated',
   'authenticated',
@@ -342,9 +329,13 @@ INSERT INTO auth.users (
   crypt('123456', gen_salt('bf')),
   now(),
   '{"provider":"email","providers":["email"]}',
-  '{"display_name":"CoolBlood","role":"data_engineer"}',
+  '{"display_name":"CoolBlood"}',
   now(),
   now(),
   false,
-  null
+  null,
+  '',
+  '',
+  '',
+  ''
 );
