@@ -6,8 +6,6 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Database, Eye, EyeOff } from "lucide-react";
 
-type UserRole = "data_engineer" | "data_ops" | "qc_analyst" | "viewer";
-
 export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -15,17 +13,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState<UserRole>("viewer");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  const roleLabels: Record<UserRole, string> = {
-    data_engineer: "Data Engineer",
-    data_ops: "DataOps",
-    qc_analyst: "QC Analyst",
-    viewer: "Viewer / Guest",
-  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,13 +28,12 @@ export default function LoginPage() {
           password,
           options: {
             data: {
-              display_name: displayName || email.split("@")[0],
-              role,
+              display_name: displayName || email.split("@")[0]
             },
           },
         });
         if (signUpError) throw signUpError;
-        alert("Đăng ký thành công! Hãy đăng nhập bằng tài khoản vừa tạo.");
+        alert("Đăng ký thành công! Hãy xác nhận email hoặc đăng nhập trực tiếp.");
         setMode("signin");
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -84,7 +73,7 @@ export default function LoginPage() {
 
       {/* Main Form */}
       <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-12">
-        <div className="w-full max-w-lg">
+        <div className="w-full max-w-md">
           <div className="glass-card rounded-3xl p-6 sm:p-10 shadow-2xl backdrop-blur-xl border border-slate-800/80">
             <div className="text-center mb-8">
               <h1 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight">
@@ -92,8 +81,8 @@ export default function LoginPage() {
               </h1>
               <p className="mt-2 text-xs text-slate-400">
                 {mode === "signin"
-                  ? "Truy cập hệ thống tài liệu kỹ thuật & kịch bản vận hành."
-                  : "Đăng ký thành viên và lựa chọn vị trí chuyên môn của bạn."}
+                  ? "Truy cập hệ thống tài liệu kỹ thuật & kịch bản vận hành cá nhân."
+                  : "Đăng ký thành viên để lưu giữ tài liệu vận hành ETL."}
               </p>
             </div>
 
@@ -131,53 +120,25 @@ export default function LoginPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === "signup" && (
-                <>
-                  <div>
-                    <label htmlFor="displayName" className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                      Họ và Tên
-                    </label>
-                    <input
-                      id="displayName"
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-sky-500 focus:bg-slate-900/80 transition-all duration-200"
-                      placeholder="Alex Nguyen"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                      Vị trí Chuyên môn (Role)
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {(["data_engineer", "data_ops", "qc_analyst", "viewer"] as UserRole[]).map((r) => (
-                        <label
-                          key={r}
-                          className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 text-center cursor-pointer transition-all duration-200 ${
-                            role === r
-                              ? "border-sky-500 bg-sky-950/20 text-sky-400 shadow-md shadow-sky-500/5"
-                              : "border-slate-800 bg-slate-950/25 text-slate-500 hover:border-slate-700 hover:text-slate-400"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="role"
-                            className="sr-only"
-                            checked={role === r}
-                            onChange={() => setRole(r)}
-                          />
-                          <span className="text-xs font-bold">{roleLabels[r]}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </>
+                <div>
+                  <label htmlFor="displayName" className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Họ và Tên
+                  </label>
+                  <input
+                    id="displayName"
+                    type="text"
+                    required
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-sky-500 focus:bg-slate-900/80 transition-all duration-200"
+                    placeholder="CoolBlood"
+                  />
+                </div>
               )}
 
               <div>
                 <label htmlFor="email" className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Email công việc
+                  Email cá nhân / công việc
                 </label>
                 <input
                   id="email"
@@ -186,7 +147,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-white placeholder:text-slate-600 outline-none focus:border-sky-500 focus:bg-slate-900/80 transition-all duration-200"
-                  placeholder="name@company.com"
+                  placeholder="name@example.com"
                 />
               </div>
 
@@ -229,7 +190,7 @@ export default function LoginPage() {
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                    Please wait...
+                    Đang xử lý...
                   </span>
                 ) : mode === "signin" ? (
                   "Đăng Nhập"
@@ -244,7 +205,7 @@ export default function LoginPage() {
 
       {/* Footer */}
       <footer className="relative z-10 py-6 text-center text-xs text-slate-600">
-        <p>Hệ thống nội bộ. Vui lòng không chia sẻ tài khoản ra ngoài.</p>
+        <p>Hệ thống wiki vận hành nội bộ cá nhân.</p>
       </footer>
     </div>
   );
