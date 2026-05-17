@@ -383,8 +383,13 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.incidents ENABLE ROW LEVEL SECURITY;
 
 -- Tạo RLS Policies (Cho phép tất cả thao tác vì là wiki cá nhân)
+DROP POLICY IF EXISTS "Allow all daily_tasks" ON public.daily_tasks;
 CREATE POLICY "Allow all daily_tasks" ON public.daily_tasks FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all projects" ON public.projects;
 CREATE POLICY "Allow all projects" ON public.projects FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow all incidents" ON public.incidents;
 CREATE POLICY "Allow all incidents" ON public.incidents FOR ALL USING (true) WITH CHECK (true);
 
 -- Seed dữ liệu mẫu cho Daily Tasks

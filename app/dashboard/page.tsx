@@ -312,6 +312,83 @@ export default function DashboardPage() {
     }, 50);
   };
 
+  // Live Markdown Insertion helper for Tasks
+  const insertTaskMarkdown = (before: string, after: string = "") => {
+    const textarea = document.getElementById("markdown-editor") as HTMLTextAreaElement;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selectedText = text.substring(start, end);
+    const replacement = before + selectedText + after;
+    const newContent = text.substring(0, start) + replacement + text.substring(end);
+    setEditTaskMarkdown(newContent);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+    }, 50);
+  };
+
+  // Image Upload and Local Picker States
+  const [imageTarget, setImageTarget] = useState<"wiki" | "task" | null>(null);
+
+  const triggerImagePicker = (target: "wiki" | "task") => {
+    setImageTarget(target);
+    setTimeout(() => {
+      document.getElementById("image-file-picker")?.click();
+    }, 50);
+  };
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      let imageUrl = "";
+
+      // 1. Try uploading to Supabase public bucket "wiki"
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+      const filePath = `uploads/${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from("wiki")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true
+        });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage
+          .from("wiki")
+          .getPublicUrl(filePath);
+        imageUrl = publicUrlData.publicUrl;
+      } else {
+        // 2. Graceful Fallback: read local file as Base64 Data URL
+        imageUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      // 3. Insert markdown format
+      const imgMarkdown = `![${file.name.split(".")[0]}](${imageUrl})`;
+      if (imageTarget === "wiki") {
+        insertMarkdown(imgMarkdown, "");
+      } else if (imageTarget === "task") {
+        insertTaskMarkdown(imgMarkdown, "");
+      }
+    } catch (err) {
+      console.error("Error loading image file:", err);
+      alert("Lỗi khi xử lý tải hình ảnh!");
+    } finally {
+      setImageTarget(null);
+      e.target.value = "";
+    }
+  }
+
   // Operations: Toggle Daily Task Status (Todo <-> Done)
   async function handleToggleTask(task: TaskType) {
     try {
@@ -946,18 +1023,18 @@ export default function DashboardPage() {
                             
                             {/* Live Markdown Toolbar */}
                             <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl border border-slate-900 bg-slate-950/80">
-                              <button type="button" onClick={() => insertMarkdown("**", "**")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chữ Đậm"><Bold className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("*", "*")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chữ Nghiêng"><Italic className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("# ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tiêu Đề 1"><Heading1 className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("## ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tiêu Đề 2"><Heading2 className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("**", "**")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chữ Đậm"><Bold className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("*", "*")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chữ Nghiêng"><Italic className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("# ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tiêu Đề 1"><Heading1 className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("## ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tiêu Đề 2"><Heading2 className="h-3.5 w-3.5" /></button>
                               <div className="h-4 w-px bg-slate-900" />
-                              <button type="button" onClick={() => insertMarkdown("| Tiêu đề | Cột 2 |\n|---|---|\n| Giá trị 1 | Giá trị 2 |", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chèn Bảng"><TableIcon className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("```sql\n", "\n```")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Khối SQL Code"><CodeIcon className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("- ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Danh Sách Dòng"><ListIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("| Tiêu đề | Cột 2 |\n|---|---|\n| Giá trị 1 | Giá trị 2 |", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chèn Bảng"><TableIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("```sql\n", "\n```")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Khối SQL Code"><CodeIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("- ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Danh Sách Dòng"><ListIcon className="h-3.5 w-3.5" /></button>
                               <div className="h-4 w-px bg-slate-900" />
-                              <button type="button" onClick={() => insertMarkdown("<span style='color: #38bdf8'>", "</span>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tô màu chữ Xanh"><Paintbrush className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("<div align='center'>\n", "\n</div>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Canh Giữa"><AlignCenter className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertMarkdown("![Chú thích hình ảnh](url_hình_ảnh_ở_đây)", "")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chèn Hình Ảnh"><ImageIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("<span style='color: #38bdf8'>", "</span>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tô màu chữ Xanh"><Paintbrush className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("<div align='center'>\n", "\n</div>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Canh Giữa"><AlignCenter className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => triggerImagePicker("task")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chèn Hình Ảnh"><ImageIcon className="h-3.5 w-3.5" /></button>
                             </div>
 
                             <textarea
@@ -1749,7 +1826,7 @@ export default function DashboardPage() {
                                 <button type="button" onClick={() => insertMarkdown("- ")} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="List"><ListIcon className="h-3.5 w-3.5" /></button>
                                 <button type="button" onClick={() => insertMarkdown("```code\n", "\n```")} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="Code"><CodeIcon className="h-3.5 w-3.5" /></button>
                                 <button type="button" onClick={() => insertMarkdown("\n| Tiêu đề 1 | Tiêu đề 2 |\n|---|---|\n| Dữ liệu 1 | Dữ liệu 2 |\n")} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="Table"><TableIcon className="h-3.5 w-3.5" /></button>
-                                <button type="button" onClick={() => insertMarkdown('![Mô tả ảnh](https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800)')} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="Ảnh"><ImageIcon className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => triggerImagePicker("wiki")} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="Ảnh"><ImageIcon className="h-3.5 w-3.5" /></button>
                                 <span className="h-4 w-px bg-slate-900 mx-1" />
                                 <button type="button" onClick={() => insertMarkdown('<span style="color: #38bdf8">', '</span>')} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="Màu chữ"><Paintbrush className="h-3.5 w-3.5" /></button>
                                 <button type="button" onClick={() => insertMarkdown('\n<div align="center">\n', '\n</div>\n')} className="p-1.5 rounded hover:bg-slate-900 text-slate-400" title="Căn giữa"><AlignCenter className="h-3.5 w-3.5" /></button>
@@ -1829,6 +1906,15 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+      
+      {/* Hidden File Picker for Image Upload */}
+      <input
+        type="file"
+        id="image-file-picker"
+        onChange={handleImageUpload}
+        accept="image/*"
+        className="hidden"
+      />
     </div>
   );
 }
