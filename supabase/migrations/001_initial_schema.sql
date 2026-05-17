@@ -339,3 +339,141 @@ INSERT INTO auth.users (
   '',
   ''
 );
+
+-- =========================================================================
+-- BƯỚC 5: TẠO BẢNG VÀ SEED DỮ LIỆU CHO DAILY TASKS, PROJECTS VÀ INCIDENTS
+-- =========================================================================
+
+-- 1. Bảng Daily Tasks
+CREATE TABLE IF NOT EXISTS public.daily_tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  due_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  status TEXT NOT NULL DEFAULT 'todo', -- 'todo' or 'done'
+  assignee TEXT NOT NULL DEFAULT 'CoolBlood',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 2. Bảng Projects
+CREATE TABLE IF NOT EXISTS public.projects (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  department TEXT NOT NULL, -- 'Finance', 'Supply Chain', 'Sales', etc.
+  goals TEXT NOT NULL,
+  brd_content TEXT NOT NULL, -- Markdown format
+  lineage TEXT NOT NULL,
+  bi_link TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 3. Bảng Incidents
+CREATE TABLE IF NOT EXISTS public.incidents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  symptom TEXT NOT NULL,
+  root_cause TEXT NOT NULL,
+  fix_logic TEXT NOT NULL, -- SQL/Python code snippet
+  status TEXT NOT NULL DEFAULT 'fixed', -- 'pending' or 'fixed'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Bật RLS
+ALTER TABLE public.daily_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.incidents ENABLE ROW LEVEL SECURITY;
+
+-- Tạo RLS Policies (Cho phép tất cả thao tác vì là wiki cá nhân)
+CREATE POLICY "Allow all daily_tasks" ON public.daily_tasks FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all projects" ON public.projects FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all incidents" ON public.incidents FOR ALL USING (true) WITH CHECK (true);
+
+-- Seed dữ liệu mẫu cho Daily Tasks
+INSERT INTO public.daily_tasks (title, due_date, status) VALUES
+  ('Kiểm tra SLA và chạy lại Synapse Pipeline AX Bronze', CURRENT_DATE, 'todo'),
+  ('Audit dbt test check lỗi trùng lặp kho Silver', CURRENT_DATE, 'done'),
+  ('Cập nhật schema External Table cho chặng Gold Serving', CURRENT_DATE - INTERVAL '1 day', 'done'),
+  ('Tối ưu hóa chỉ mục Tabular AAS Model chặng 5', CURRENT_DATE, 'todo'),
+  ('Phục hồi kết nối Gateway Integration Runtime', CURRENT_DATE, 'todo')
+ON CONFLICT DO NOTHING;
+
+-- Seed dữ liệu mẫu cho Projects
+INSERT INTO public.projects (name, department, goals, brd_content, lineage, bi_link) VALUES
+  (
+    'Báo cáo P&L Tự động hóa', 
+    'Finance', 
+    'Tự động trích xuất dữ liệu tài chính từ AX ERP chặng Silver/Gold sang Power BI, thay thế Excel thủ công.',
+    '### Đặc tả Nghiệp vụ (BRD)
+1. **Tần suất nạp**: Daily 06:00 AM.
+2. **Công thức lợi nhuận gộp**: `Revenue - COGS`.
+3. **Các chiều phân tích**: Theo Chi nhánh, Nhóm khách hàng, Nhóm sản phẩm.
+4. **Sử dụng Live Connection**: Trực tiếp tới AAS Tabular Model để tối ưu hóa hiệu năng.',
+    'AX ERP Source DB -> Azure Synapse (Bronze) -> Azure Databricks (Silver -> Gold) -> Azure Analysis Services (Tabular Model) -> Power BI Live Connection',
+    'https://app.powerbi.com/groups/me/reports/finance-pl-automatic'
+  ),
+  (
+    'Dự báo Hàng tồn kho Đa chi nhánh', 
+    'Supply Chain', 
+    'Theo dõi lượng tồn kho an toàn, cảnh báo tự động khi tồn kho xuống dưới mức tối thiểu tại các kho chi nhánh.',
+    '### Đặc tả Nghiệp vụ (BRD)
+1. **Điểm đặt hàng lại (Reorder Point)**: `Lead Time Demand + Safety Stock`.
+2. **Safety Stock** = `(Max Daily Sales * Max Lead Time in Days) - (Average Daily Sales * Average Lead Time in Days)`.
+3. **Cảnh báo màu**:
+   - Đỏ: Dưới Safety Stock.
+   - Vàng: Bằng Safety Stock.
+   - Xanh: Đạt yêu cầu.',
+    'AX Inventory Table -> ADLS Gen2 ADf pipeline -> dbt Incremental logic -> Azure Serverless Serving -> Power BI Inventory Hub Report',
+    'https://app.powerbi.com/groups/me/reports/inventory-safety-stock'
+  ),
+  (
+    'Phân tích Doanh thu & Chiết khấu', 
+    'Sales', 
+    'Báo cáo hiệu quả kinh doanh, tỷ lệ chiết khấu thực tế so với barem quy định theo từng nhóm sản phẩm.',
+    '### Đặc tả Nghiệp vụ (BRD)
+1. **Doanh thu thuần** = `Doanh thu gộp - Chiết khấu - Trả hàng`.
+2. **Chiết khấu tối đa cho phép**:
+   - Nhóm hàng A: 5%
+   - Nhóm hàng B: 8%
+   - Nhóm hàng C: 12%
+3. **Trigger Alert**: Gửi email cảnh báo nếu chiết khấu thực tế vượt barem.',
+    'AX SalesTable/SalesLine -> Databricks dbt Gold Layer -> AAS Sales Model -> Power BI Sales Executive Dashboard',
+    'https://app.powerbi.com/groups/me/reports/sales-performance-discount'
+  )
+ON CONFLICT DO NOTHING;
+
+-- Seed dữ liệu mẫu cho Incidents
+INSERT INTO public.incidents (title, symptom, root_cause, fix_logic, status) VALUES
+  (
+    'Trùng lặp dữ liệu đơn hàng (Duplicate Sales Orders) chặng Silver',
+    'Báo cáo Power BI hiển thị doanh thu tăng vọt gấp đôi so với thực tế ở chi nhánh HCM tại một số thời điểm.',
+    'dbt Incremental model chạy trùng lặp do cấu hình unique_key không đúng khi AX ERP update bản ghi có cùng RecId nhưng khác ModifiedDateTime.',
+    '-- Phục hồi dữ liệu bằng cách gom nhóm và lấy bản ghi ModifiedDateTime mới nhất của từng RecId
+WITH deduped AS (
+  SELECT *, ROW_NUMBER() OVER(PARTITION BY RecId ORDER BY ModifiedDateTime DESC) as rn
+  FROM {{ source(''bronze'', ''sales_orders'') }}
+)
+SELECT * FROM deduped WHERE rn = 1;',
+    'fixed'
+  ),
+  (
+    'Synapse Serverless External Table bị timeout chặng Serving',
+    'Chạy truy vấn trên Synapse Serverless báo lỗi ''Resource limit reached, query aborted''.',
+    'Dữ liệu chặng Gold lưu trữ dưới dạng hàng triệu file Parquet nhỏ dẫn đến việc đọc metadata quá tải hệ thống Serverless.',
+    '-- Nén dữ liệu (Compaction) chặng Gold delta sử dụng Databricks Optimize
+OPTIMIZE gold.dim_customer
+ZORDER BY (CustomerKey);',
+    'fixed'
+  ),
+  (
+    'AAS Tabular Model refresh thất bại do lỗi khóa ngoại (Foreign Key mismatch)',
+    'Tiến trình refresh AAS báo lỗi: ''The attribute key cannot be found in the dimension table''.',
+    'Bảng dữ liệu SalesTransaction chặng Gold chứa khoá CustomerKey chưa tồn tại trong bảng dim_customer chặng Gold do chạy bất đồng bộ chặng dbt.',
+    '-- Bổ sung giá trị mặc định UNKNOWN trong dbt để tránh lỗi khóa ngoại khi kết nối AAS
+SELECT 
+  COALESCE(c.CustomerKey, -1) as CustomerKey,
+  s.SalesOrderNumber
+FROM {{ ref(''fct_sales'') }} s
+LEFT JOIN {{ ref(''dim_customer'') }} c ON s.CustomerId = c.CustomerId;',
+    'pending'
+  )
+ON CONFLICT DO NOTHING;
+
