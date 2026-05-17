@@ -1,14 +1,31 @@
--- doc-platform initial database schema (PostgreSQL)
--- Locations: supabase/migrations/001_initial_schema.sql
+-- doc-platform initial database schema (PostgreSQL) - RESET & REBUILD SCRIPT
+-- Location: supabase/migrations/001_initial_schema.sql
 
--- Extensions
+-- =========================================================================
+-- BƯỚC 1: XÓA SẠCH CẤU TRÚC LỖI CŨ (Để tránh lỗi 'already exists' khi chạy lại)
+-- =========================================================================
+drop trigger if exists on_auth_user_created on auth.users;
+drop function if exists public.handle_new_user() cascade;
+drop table if exists public.wiki_documents cascade;
+drop table if exists public.pipeline_steps cascade;
+drop table if exists public.profiles cascade;
+drop type if exists user_role cascade;
+
+-- Xóa tài khoản ladochoi@gmail.com cũ trong auth.users nếu đã tạo lỗi trước đó
+delete from auth.users where email = 'ladochoi@gmail.com';
+
+-- =========================================================================
+-- BƯỚC 2: KHỞI TẠO CẤU TRÚC MỚI CHUẨN XÁC
+-- =========================================================================
+
+-- Kích hoạt tiện ích mã hóa
 create extension if not exists "pgcrypto";
 
--- User Roles Type Definition
+-- Định nghĩa các Vai trò Chuyên môn
 create type user_role as enum ('data_engineer', 'data_ops', 'qc_analyst', 'viewer');
 
--- 1. PROFILES (1:1 with auth.users)
-create table if not exists public.profiles (
+-- Bảng Profiles (Đồng bộ 1:1 với auth.users)
+create table public.profiles (
   id uuid primary key references auth.users on delete cascade,
   email text not null,
   display_name text,
@@ -16,38 +33,34 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
--- 2. PIPELINE STEPS (The 6 steps managed by you)
-create table if not exists public.pipeline_steps (
+-- Bảng 6 Bước Pipeline
+create table public.pipeline_steps (
   step_number int primary key check (step_number between 1 and 6),
   step_name text not null,
   platform text not null,
   trigger_type text not null,
   sla_minutes int not null,
-  critical_level text not null default 'High', -- 'High', 'Medium', 'Low'
+  critical_level text not null default 'High',
   dependency_logic text,
   description text
 );
 
--- 3. WIKI DOCUMENTS / STEPS MANUALS
-create table if not exists public.wiki_documents (
+-- Bảng Wiki Tài liệu / Hướng dẫn Vận hành
+create table public.wiki_documents (
   id uuid primary key default gen_random_uuid(),
-  step_number int references public.pipeline_steps(step_number) on delete set null, -- Optional link to one of the 6 steps
+  step_number int references public.pipeline_steps(step_number) on delete set null,
   title text not null,
   slug text not null unique,
   category text not null check (category in ('infrastructure', 'dbt', 'operations', 'qc_testing', 'general')),
-  content text not null,                 -- Markdown documentation / wiki article
-  file_url text,                         -- Direct link to uploaded PDF/Doc file on Supabase Storage
+  content text not null,
+  file_url text,
   author_id uuid references public.profiles(id) on delete set null,
   is_pinned boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
--- =========================================================================
--- AUTOMATION & TRIGGERS
--- =========================================================================
-
--- Trigger to auto-create profile on signup
+-- Trigger tự động đồng bộ tài khoản auth.users sang public.profiles
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -57,7 +70,6 @@ as $$
 declare
   assigned_role user_role;
 begin
-  -- Automatically map role if metadata is available
   assigned_role := coalesce(
     nullif(trim(new.raw_user_meta_data->>'role'), '')::user_role,
     'viewer'::user_role
@@ -79,25 +91,20 @@ begin
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
--- =========================================================================
--- ROW LEVEL SECURITY (RLS) POLICIES
--- =========================================================================
-
+-- Thiết lập bảo mật Row Level Security (RLS)
 alter table public.profiles enable row level security;
 alter table public.pipeline_steps enable row level security;
 alter table public.wiki_documents enable row level security;
 
--- Viewer Policy (Select is allowed for all authenticated users)
+-- Cấp quyền đọc ghi chuẩn hóa
 create policy "allow_read_all_steps" on public.pipeline_steps for select using (auth.role() = 'authenticated');
 create policy "allow_read_all_wiki" on public.wiki_documents for select using (auth.role() = 'authenticated');
 create policy "allow_read_own_profile" on public.profiles for select using (auth.uid() = id);
 
--- Write/Modify Policies based on Roles
 create policy "ops_engineer_write_steps" on public.pipeline_steps
   for all using (
     exists (
@@ -106,7 +113,6 @@ create policy "ops_engineer_write_steps" on public.pipeline_steps
     )
   );
 
--- Collaborative Wiki: All Data Engineers, DataOps, and QC Analysts can write & update docs
 create policy "staff_write_wiki" on public.wiki_documents
   for all using (
     exists (
@@ -115,14 +121,13 @@ create policy "staff_write_wiki" on public.wiki_documents
     )
   );
 
--- Profile Update
-create policy "profiles_update_own" on public.profiles
-  for update using (auth.uid() = id);
+create policy "profiles_update_own" on public.profiles for update using (auth.uid() = id);
 
 -- =========================================================================
--- SEED DATA: PIPELINE STEPS
+-- BƯỚC 3: NẠP DỮ LIỆU ĐẶC THẢ LUỒNG ETL (SEED STEPS & WIKIS)
 -- =========================================================================
 
+-- Seed data: Pipeline Steps
 insert into public.pipeline_steps (step_number, step_name, platform, trigger_type, sla_minutes, critical_level, dependency_logic, description) values
   (1, 'AX Data Extraction', 'Synapse Pipeline', 'Scheduled (06:00 AM)', 45, 'High', 'None', 'Extract incremental / full data from AX ERP and store raw files into ADLS Gen2 Bronze layer.'),
   (2, 'Trigger Databricks Job', 'Synapse Pipeline', 'API Call', 2, 'High', 'On Success of Step 1', 'Synapse calls Databricks Job API after extraction completes successfully.'),
@@ -131,10 +136,7 @@ insert into public.pipeline_steps (step_number, step_name, platform, trigger_typ
   (5, 'Analysis Services Refresh', 'AS Tabular Model', 'Scheduled (08:00 AM)', 20, 'High', 'None (Vulnerability: runs strictly at 08:00 AM)', 'Process semantic model so latest Gold data is loaded into the AAS tabular database.'),
   (6, 'Power BI Live Report Ready', 'Power BI Services', 'Automatic', 1, 'High', 'On Success of Step 5', 'Power BI reports query latest processed AS model via active live connection.');
 
--- =========================================================================
--- SEED DATA: INITIAL WIKI DOCUMENTS FOR EACH STEP
--- =========================================================================
-
+-- Seed data: Detailed Viet Wikis
 insert into public.wiki_documents (id, step_number, title, slug, category, content, file_url) values
   (
     '11111111-1111-1111-1111-111111111111',
@@ -313,3 +315,36 @@ Nếu người dùng báo cáo dữ liệu chưa cập nhật sau 08:30 AM:
 2. Nếu bước 5 thành công nhưng dữ liệu vẫn cũ, có nghĩa dbt bị trễ hạn trước đó. Tiến hành chạy lại AS Refresh thủ công.',
     null
   );
+
+-- =========================================================================
+-- BƯỚC 4: TẠO USER LADOCHOI ĐÃ XÁC NHẬN EMAIL (BYPASS CONFIRMATION)
+-- =========================================================================
+INSERT INTO auth.users (
+  id,
+  instance_id,
+  aud,
+  role,
+  email,
+  encrypted_password,
+  email_confirmed_at,
+  raw_app_meta_data,
+  raw_user_meta_data,
+  created_at,
+  updated_at,
+  is_super_admin,
+  phone
+) VALUES (
+  gen_random_uuid(),
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated',
+  'authenticated',
+  'ladochoi@gmail.com',
+  crypt('123456', gen_salt('bf')),
+  now(),
+  '{"provider":"email","providers":["email"]}',
+  '{"display_name":"CoolBlood","role":"data_engineer"}',
+  now(),
+  now(),
+  false,
+  null
+);
