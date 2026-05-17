@@ -28,7 +28,9 @@ import {
   List as ListIcon,
   Paintbrush,
   AlignCenter,
-  AlertTriangle
+  AlertTriangle,
+  Image as ImageIcon,
+  LayoutDashboard
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -75,7 +77,7 @@ export default function DashboardPage() {
   const [editFileUrl, setEditFileUrl] = useState("");
   const [editFolderId, setEditFolderId] = useState<string | null>(null);
 
-  // Fetch data - Now completely decoupled from activeDoc state to prevent infinite loops
+  // Fetch data - Decoupled from activeDoc state to prevent infinite loops
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -247,9 +249,18 @@ export default function DashboardPage() {
       <aside className="w-80 border-r border-slate-900 bg-slate-950/20 shrink-0 flex flex-col overflow-hidden">
         {/* Explorer Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-900 bg-slate-950/40 shrink-0">
-          <span className="text-xs font-black tracking-wider text-slate-400 uppercase">
-            Document Explorer
-          </span>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => { setActiveDoc(null); setIsEditing(false); }}
+              className="p-1 rounded text-slate-400 hover:text-sky-400 hover:bg-slate-900 transition-all"
+              title="Quay lại Trang chủ Dashboard"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+            </button>
+            <span className="text-xs font-black tracking-wider text-slate-400 uppercase">
+              Doc Explorer
+            </span>
+          </div>
           <div className="flex items-center gap-1">
             <button 
               onClick={() => setCreatingFolderParentId(null)}
@@ -512,15 +523,23 @@ export default function DashboardPage() {
             {/* Doc Sub-Header / Tool Bar */}
             <div className="flex items-center justify-between px-6 py-3 border-b border-slate-900 bg-slate-950/60 shrink-0">
               <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold">
-                <Folder className="h-3.5 w-3.5 text-sky-500" />
-                <span>
+                {/* BACK TO DASHBOARD BREADCRUMB */}
+                <button 
+                  onClick={() => { setActiveDoc(null); setIsEditing(false); }}
+                  className="flex items-center gap-1 text-slate-400 hover:text-sky-400 transition-colors font-bold mr-2 border-r border-slate-900 pr-3 shrink-0"
+                  title="Quay lại Dashboard chính"
+                >
+                  ← Quay lại Dashboard
+                </button>
+                <Folder className="h-3.5 w-3.5 text-sky-500 shrink-0" />
+                <span className="truncate max-w-[120px] sm:max-w-none">
                   {folders.find(f => f.id === activeDoc.folder_id)?.name || "Root Workspace"}
                 </span>
                 <span>/</span>
-                <span className="text-slate-300 font-bold">{activeDoc.title}</span>
+                <span className="text-slate-300 font-bold truncate max-w-[150px] sm:max-w-none">{activeDoc.title}</span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {!isEditing ? (
                   <>
                     <button
@@ -603,6 +622,9 @@ export default function DashboardPage() {
                           onChange={(e) => setEditFileUrl(e.target.value)}
                           className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-slate-300 outline-none focus:border-sky-500 transition-all placeholder:text-slate-700"
                         />
+                        <span className="text-[10px] text-slate-500 mt-1 block leading-normal">
+                          * Dán link PDF/Excel/Word đã tải lên Supabase Storage hoặc server khác để chèn nút tải tệp đính kèm trực quan.
+                        </span>
                       </div>
                     </div>
 
@@ -665,6 +687,14 @@ export default function DashboardPage() {
                         title="Tạo Bảng (Table)"
                       >
                         <TableIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown('![Mô tả hình ảnh](https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800)')}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Chèn hình ảnh (Image)"
+                      >
+                        <ImageIcon className="h-3.5 w-3.5" />
                       </button>
                       <span className="h-4 w-px bg-slate-900 mx-1" />
                       <button
@@ -745,7 +775,7 @@ export default function DashboardPage() {
                     )}
 
                     {/* Render Content Markdown Body */}
-                    <div className="prose prose-invert max-w-none text-slate-300 text-xs sm:text-sm leading-relaxed prose-headings:font-display prose-headings:font-black prose-headings:tracking-tight prose-headings:text-white prose-a:text-sky-400 prose-code:text-sky-300 prose-pre:bg-slate-950 prose-pre:border prose-pre:border-slate-900/60 prose-pre:rounded-2xl">
+                    <div className="prose prose-invert max-w-none text-slate-300 text-xs sm:text-sm leading-relaxed prose-headings:font-display prose-headings:font-black prose-headings:tracking-tight prose-headings:text-white prose-a:text-sky-400 prose-code:text-sky-300 prose-pre:bg-slate-950 prose-pre:border prose-pre:border-slate-900/60 prose-pre:rounded-2xl prose-img:mx-auto prose-img:rounded-2xl prose-img:border prose-img:border-slate-900">
                       <ReactMarkdown>{activeDoc.content}</ReactMarkdown>
                     </div>
 
