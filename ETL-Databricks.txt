@@ -1,0 +1,519 @@
+TL Data Bricks
+
+
+
+1. Purpose
+
+This document provides an overview of the end-to-end ETL ecosystem for AX data platform, including schedules, data flows, Databricks services, dependencies, and operational responsibilities.
+
+
+
+2. System Architecture Overview
+
+
+
+
+
+3. End-to-End ETL Flow
+
+
+
+Seq
+
+Step Name
+
+Platform
+
+Trigger
+
+Description
+
+Output
+
+SLA
+
+1
+
+AX Data Extraction
+
+Synapse Pipeline
+
+Scheduled (06:00 AM)
+
+Extract incremental / full data from AX and store raw files into ADLS
+
+Raw Bronze Files
+
+45 min
+
+2
+
+Trigger Databricks Job
+
+Synapse
+
+On Success of Step 1
+
+Synapse calls Databricks Job API after extraction completes successfully
+
+Databricks Job Started
+
+2 min
+
+3
+
+dbt Model Execution
+
+Databricks
+
+Internal Job Task
+
+dbt reads model dependencies and runs Bronze → Silver → Gold transformations automatically
+
+Gold Tables Updated
+
+30 min
+
+4
+
+Gold Data Available for Query
+
+Synapse SQL
+
+Automatic
+
+Existing external tables/views read latest Gold data from storage path
+
+Queryable Gold Tables
+
+Immediate
+
+5
+
+Analysis Services Refresh
+
+AS Model
+
+Scheduled (08:00 AM)
+
+Process semantic model so latest Gold data is loaded into tabular model
+
+Refreshed Semantic Model
+
+20 min
+
+6
+
+Power BI Live Report Ready
+
+Power BI
+
+Automatic
+
+Reports query latest processed AS model through live connection
+
+Updated Dashboard
+
+Immediate
+
+
+
+4. ETL Schedule Matrix
+
+
+
+Seq
+
+Time
+
+Job Name
+
+Platform
+
+Depends On
+
+SLA
+
+Critical
+
+1
+
+06:00
+
+AX Extract
+
+Synapse
+
+None
+
+45m
+
+High
+
+2
+
+After #1
+
+Databricks Job Trigger
+
+Synapse
+
+AX Extract
+
+2m
+
+High
+
+3
+
+After #2
+
+dbt Run Models
+
+Databricks
+
+Trigger Success
+
+30m
+
+High
+
+4
+
+After #3
+
+AS Refresh
+
+Analysis Services
+
+None
+
+20m
+
+High
+
+5
+
+After #4
+
+Power BI Live Ready
+
+Power BI
+
+AS Success
+
+Immediate
+
+High
+
+Ghi chú:
+
+AX maintenance may delay 06:00 schedule.
+Downstream jobs depend on upstream completion.
+
+
+
+5. Services Overview
+
+5.1 Services Inventory
+
+
+
+Platform
+
+Layer
+
+Service
+
+Purpose
+
+On-Premises
+
+Source
+
+AX ERP
+
+Nguồn dữ liệu gốc (Sales, Inventory, Finance).
+
+ 
+
+Connectivity
+
+Self-hosted IR (Gateway)
+
+Cầu nối bảo mật giữa mạng nội bộ và Azure Cloud.
+
+Azure Data Platform
+
+Orchestration
+
+Synapse Pipeline / ADF
+
+Lập lịch, điều phối toàn bộ luồng ETL và trigger dbt/AS.
+
+ 
+
+Storage
+
+ADLS Gen2
+
+Data Lake lưu trữ file (Raw) và dữ liệu Delta.
+
+ 
+
+Serving (SQL)
+
+Synapse External Tables
+
+Lớp trung gian cho phép truy vấn Delta Lake bằng SQL.
+
+ 
+
+Security
+
+Azure Key Vault
+
+Lưu trữ bí mật (mật khẩu, connection strings) an toàn.
+
+ 
+
+Monitoring
+
+Azure Monitor / Log Analytics
+
+Giám sát lỗi pipeline và hiệu suất hệ thống.
+
+Databricks Lakehouse
+
+Compute
+
+Azure Databricks
+
+Nền tảng tính toán Spark cho các tác vụ xử lý lớn.
+
+ 
+
+Governance
+
+Unity Catalog
+
+Quản lý tập trung phân quyền, schema và lineage.
+
+ 
+
+SQL Compute
+
+SQL Warehouse
+
+Chạy các model dbt SQL và phục vụ truy vấn BI.
+
+ 
+
+Transformation
+
+dbt
+
+Xây dựng logic biến đổi dữ liệu Bronze \ Silver \ Gold.
+
+ 
+
+Storage Format
+
+Delta Lake
+
+Định dạng bảng dữ liệu hỗ trợ ACID và hiệu năng cao.
+
+Business Intelligence
+
+Semantic Layer
+
+Analysis Services (AS)
+
+Chứa Measure (DAX), logic nghiệp vụ và nén dữ liệu.
+
+ 
+
+Reporting
+
+Power BI Live Report
+
+Hiển thị biểu đồ, Dashboard cho người dùng cuối.
+
+
+
+5.2 Flow by Phase
+
+
+
+Phase
+
+Flow
+
+Purpose
+
+Ingestion
+
+AX → Gateway → Synapse → ADLS
+
+Extract source data into lake
+
+Transformation
+
+ADLS → Databricks → dbt → Delta Gold
+
+Clean and model data
+
+Consumption
+
+Gold → SQL → AS → Power BI
+
+Deliver trusted reporting
+
+
+
+Phase 1 – Ingestion: Extract source data from AX and land it into the data lake.
+
+
+
+Phase 2 – Transformation: Clean, transform, and model raw data into business-ready datasets.
+
+
+
+Phase 3 – Consumption: Deliver trusted semantic models and dashboards to business users.
+
+
+
+
+
+6. Job Trigger Matrix
+
+6.1 Trigger Flow Overview
+
+
+
+
+
+6.2 Job Trigger Table
+
+
+
+Seq
+
+Job Name
+
+Platform
+
+Trigger Type
+
+Trigger Source
+
+Success Output
+
+If Failed
+
+1
+
+AX Extract
+
+Synapse
+
+Schedule
+
+06:00 AM Daily
+
+Raw files in ADLS
+
+No downstream run
+
+2
+
+Databricks Job Trigger
+
+Synapse
+
+API Call
+
+Step 1 Success
+
+Databricks job started
+
+No transformation
+
+3
+
+dbt Run Models
+
+Databricks
+
+Internal Task
+
+Job Start
+
+Gold tables updated
+
+No fresh Gold data
+
+4
+
+AS Refresh
+
+Analysis Services
+
+Schedule
+
+08:00 AM Daily
+
+Semantic model refreshed
+
+BI shows old data
+
+5
+
+Power BI Live Ready
+
+Power BI
+
+Auto
+
+After AS Ready
+
+Latest dashboard
+
+Users see stale data
+
+
+
+6.3 Trigger Dependency Logic
+
+Upstream Job
+
+Downstream Job
+
+AX Extract
+
+Databricks Job
+
+Databricks Job
+
+dbt Run
+
+dbt Run
+
+Gold Ready
+
+Gold Ready + 08:00 Time
+
+AS Refresh
+
+AS Refresh Success
+
+Power BI Ready
+
+6.4 Important Note
+
+Hiện tại AS Refresh chạy theo schedule 08:00, không phụ thuộc trực tiếp dbt finish time.
+
+Nếu ETL bị delay:
+
+Gold có thể chưa sẵn sàng lúc 08:00
+AS vẫn refresh dữ liệu cũ
