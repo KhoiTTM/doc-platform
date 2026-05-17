@@ -477,3 +477,62 @@ LEFT JOIN {{ ref(''dim_customer'') }} c ON s.CustomerId = c.CustomerId;',
   )
 ON CONFLICT DO NOTHING;
 
+-- =========================================================================
+-- BƯỚC 6: BỔ SUNG CÁC CỘT CHI TIẾT CHO BẢNG DAILY TASKS & SEED DỮ LIỆU
+-- =========================================================================
+ALTER TABLE public.daily_tasks 
+  ADD COLUMN IF NOT EXISTS bu TEXT DEFAULT 'Data',
+  ADD COLUMN IF NOT EXISTS requester TEXT DEFAULT 'CoolBlood',
+  ADD COLUMN IF NOT EXISTS request_date DATE DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS completion_date DATE,
+  ADD COLUMN IF NOT EXISTS details_markdown TEXT DEFAULT '# Mô tả chi tiết Yêu cầu & Giải pháp\n\n### 1. Yêu cầu chi tiết\n- [Ghi chú yêu cầu tại đây]\n\n### 2. Giải pháp kỹ thuật\n- [Mô tả giải pháp thực hiện tại đây]';
+
+-- Cập nhật dữ liệu mẫu chi tiết
+UPDATE public.daily_tasks SET 
+  bu = 'Data Engineering', 
+  requester = 'CoolBlood', 
+  request_date = CURRENT_DATE, 
+  details_markdown = '# Kiểm tra SLA và chạy lại Synapse Pipeline AX Bronze
+
+### 1. Yêu cầu chi tiết
+- Nguồn dữ liệu từ AX ERP bị chậm do tiến trình sao lưu cơ sở dữ liệu hàng ngày diễn ra vào lúc 05:30 AM dẫn đến Pipeline của Synapse bị timeout.
+- Cần theo dõi sát sao SLA (phải hoàn thành trước 07:00 AM) và kích hoạt chạy lại thủ công nếu bước Extraction thất bại.
+
+### 2. Giải pháp kỹ thuật
+- Truy cập Azure Synapse Analytics workspace ➜ Monitor ➜ Pipeline Runs.
+- Xác định pipeline `PL_Extract_AX_Bronze`.
+- Nhấn **Retry** chặng bị thất bại. Kiểm tra kết nối tới Integration Runtime.'
+WHERE title = 'Kiểm tra SLA và chạy lại Synapse Pipeline AX Bronze';
+
+UPDATE public.daily_tasks SET 
+  bu = 'Finance', 
+  requester = 'Linh Nguyễn (CFO)', 
+  request_date = CURRENT_DATE - INTERVAL '1 day',
+  completion_date = CURRENT_DATE,
+  details_markdown = '# Audit dbt test check lỗi trùng lặp kho Silver
+
+### 1. Yêu cầu chi tiết
+- Báo cáo tài chính phát hiện sai lệch số liệu doanh thu chặng Silver. Nghi ngờ có bản ghi bị trùng lặp ở bảng Fact.
+- Cần thực hiện audit dbt tests để rà soát toàn bộ các ràng buộc unique và non-null.
+
+### 2. Giải pháp kỹ thuật
+- Kích hoạt lệnh `dbt test --select fact_finance_transactions` trong Databricks terminal.
+- Phát hiện lỗi trùng lặp tại nguồn do dữ liệu test của đội ERP. Tiến hành loại bỏ bằng script dedup và chạy lại `dbt run`.'
+WHERE title = 'Audit dbt test check lỗi trùng lặp kho Silver';
+
+UPDATE public.daily_tasks SET 
+  bu = 'Supply Chain', 
+  requester = 'Tuấn Trần (SCM Director)', 
+  request_date = CURRENT_DATE - INTERVAL '2 days',
+  completion_date = CURRENT_DATE - INTERVAL '1 day',
+  details_markdown = '# Cập nhật schema External Table cho chặng Gold Serving
+
+### 1. Yêu cầu chi tiết
+- Cần bổ sung cột `StorageLocation` mới được thêm vào ở chặng Gold Delta Lake vào External Table trên Synapse Serverless SQL để Power BI có thể truy cập được.
+
+### 2. Giải pháp kỹ thuật
+- Truy cập Synapse Serverless SQL database.
+- Thực hiện DROP và CREATE lại External Table `bi.dim_inventory` có bổ sung cột `StorageLocation` kiểu dữ liệu NVARCHAR(100).'
+WHERE title = 'Cập nhật schema External Table cho chặng Gold Serving';
+
+
