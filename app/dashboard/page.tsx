@@ -18,7 +18,17 @@ import {
   Layers, 
   BookOpen, 
   Info,
-  ArrowRight
+  ArrowRight,
+  Bold,
+  Italic,
+  Heading1,
+  Heading2,
+  Table as TableIcon,
+  Code as CodeIcon,
+  List as ListIcon,
+  Paintbrush,
+  AlignCenter,
+  AlertTriangle
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -65,7 +75,7 @@ export default function DashboardPage() {
   const [editFileUrl, setEditFileUrl] = useState("");
   const [editFolderId, setEditFolderId] = useState<string | null>(null);
 
-  // Fetch data
+  // Fetch data - Now completely decoupled from activeDoc state to prevent infinite loops
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -74,18 +84,12 @@ export default function DashboardPage() {
 
       setFolders(foldersData || []);
       setDocuments(docsData || []);
-
-      // If activeDoc is set, update it with fresh data
-      if (activeDoc) {
-        const fresh = docsData?.find(d => d.id === activeDoc.id);
-        if (fresh) setActiveDoc(fresh);
-      }
     } catch (err) {
       console.error("Error loading data:", err);
     } finally {
       setLoading(false);
     }
-  }, [supabase, activeDoc]);
+  }, [supabase]);
 
   useEffect(() => {
     loadData();
@@ -160,6 +164,17 @@ export default function DashboardPage() {
       }).eq("id", activeDoc.id);
 
       if (error) throw error;
+      
+      // Update local state directly to prevent layout jumps or loops
+      setActiveDoc(prev => prev ? {
+        ...prev,
+        title: editTitle.trim(),
+        content: editContent,
+        file_url: editFileUrl.trim() || null,
+        folder_id: editFolderId,
+        updated_at: new Date().toISOString()
+      } : null);
+
       setIsEditing(false);
       await loadData();
     } catch (err) {
@@ -191,6 +206,31 @@ export default function DashboardPage() {
     setIsEditing(true);
   };
 
+  // Live Markdown Insertion helper
+  const insertMarkdown = (before: string, after: string = "") => {
+    const textarea = document.getElementById("markdown-editor") as HTMLTextAreaElement;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    
+    const selectedText = text.substring(start, end);
+    const replacement = before + selectedText + after;
+    
+    const newContent = text.substring(0, start) + replacement + text.substring(end);
+    setEditContent(newContent);
+    
+    // Maintain cursor focus and place selection nicely
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(
+        start + before.length,
+        start + before.length + selectedText.length
+      );
+    }, 50);
+  };
+
   // SVG steps definitions for beautiful pipeline view
   const etlSteps = [
     { num: 1, name: "Bronze Extraction", platform: "Azure Synapse / AX DB", folderId: "11111111-1111-1111-1111-000000000001" },
@@ -202,7 +242,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden animate-fade-in">
       {/* LEFT EXPLORER PANEL */}
       <aside className="w-80 border-r border-slate-900 bg-slate-950/20 shrink-0 flex flex-col overflow-hidden">
         {/* Explorer Header */}
@@ -273,7 +313,6 @@ export default function DashboardPage() {
               )}
 
               {/* FOLDERS AND DOCUMENTS TREE */}
-              {/* 1. Folders rendering */}
               {folders.filter(f => f.parent_id === null).map((rootFolder) => {
                 const isExpanded = expandedFolders[rootFolder.id];
                 const subFolders = folders.filter(sf => sf.parent_id === rootFolder.id);
@@ -445,7 +484,7 @@ export default function DashboardPage() {
                 );
               })}
 
-              {/* 2. Root Level direct documents */}
+              {/* Root Level direct documents */}
               {documents.filter(d => d.folder_id === null).map((doc) => (
                 <button
                   key={doc.id}
@@ -521,31 +560,31 @@ export default function DashboardPage() {
             </div>
 
             {/* Document Workspace Core Scroll */}
-            <div className="flex-1 overflow-y-auto px-6 py-8 sm:px-12">
-              <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex-1 flex flex-col overflow-hidden px-6 py-4 sm:px-12">
+              <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col space-y-4 overflow-hidden">
                 
                 {/* 1. EDIT MODE */}
                 {isEditing ? (
-                  <div className="space-y-4">
+                  <div className="flex-1 flex flex-col space-y-4 overflow-hidden">
                     {/* Edit title */}
-                    <div>
+                    <div className="shrink-0">
                       <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Tiêu đề tài liệu</label>
                       <input
                         type="text"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-base text-white font-bold outline-none focus:border-sky-500 transition-all"
+                        className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-sm text-white font-bold outline-none focus:border-sky-500 transition-all"
                       />
                     </div>
 
                     {/* Edit folder mapping */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4 shrink-0">
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Vị trí lưu trữ (Folder)</label>
                         <select
                           value={editFolderId || ""}
                           onChange={(e) => setEditFolderId(e.target.value || null)}
-                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-3 py-2.5 text-xs text-slate-300 outline-none focus:border-sky-500 transition-all"
+                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-sky-500 transition-all"
                         >
                           <option value="">-- Root Workspace --</option>
                           {folders.map(f => (
@@ -562,29 +601,112 @@ export default function DashboardPage() {
                           placeholder="https://supabase.co/storage/v1/object/public/manuals/..."
                           value={editFileUrl}
                           onChange={(e) => setEditFileUrl(e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-300 outline-none focus:border-sky-500 transition-all placeholder:text-slate-700"
+                          className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-slate-300 outline-none focus:border-sky-500 transition-all placeholder:text-slate-700"
                         />
                       </div>
                     </div>
 
+                    {/* Markdown Formatting Toolbar - PREMIUM addition */}
+                    <div className="shrink-0 flex flex-wrap items-center gap-1 p-1.5 rounded-xl border border-slate-900 bg-slate-950/60">
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("**", "**")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Chữ đậm (Bold)"
+                      >
+                        <Bold className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("*", "*")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Chữ nghiêng (Italic)"
+                      >
+                        <Italic className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="h-4 w-px bg-slate-900 mx-1" />
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("# ")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Tiêu đề 1"
+                      >
+                        <Heading1 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("## ")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Tiêu đề 2"
+                      >
+                        <Heading2 className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="h-4 w-px bg-slate-900 mx-1" />
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("- ")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Danh sách gạch đầu dòng"
+                      >
+                        <ListIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("```code\n", "\n```")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Khối Code (Code Block)"
+                      >
+                        <CodeIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown("\n| Tiêu đề 1 | Tiêu đề 2 | Tiêu đề 3 |\n|-----------|-----------|-----------|\n| Ô dữ liệu 1 | Ô dữ liệu 2 | Ô dữ liệu 3 |\n")}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Tạo Bảng (Table)"
+                      >
+                        <TableIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="h-4 w-px bg-slate-900 mx-1" />
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown('<span style="color: #38bdf8">', '</span>')}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Tô màu chữ Neon (Blue)"
+                      >
+                        <Paintbrush className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown('\n<div align="center">\n', '\n</div>\n')}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Căn lề giữa (Center Align)"
+                      >
+                        <AlignCenter className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => insertMarkdown('\n> [!NOTE]\n> ')}
+                        className="p-1.5 rounded hover:bg-slate-900 hover:text-white text-slate-400 transition-all"
+                        title="Hộp chú ý (GitHub Alert)"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
                     {/* Markdown Body Textarea */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Nội dung tài liệu (Markdown)</label>
-                        <span className="text-[10px] text-slate-600 font-semibold">Hỗ trợ đầy đủ cú pháp Markdown</span>
-                      </div>
+                    <div className="flex-1 flex flex-col min-h-0">
                       <textarea
+                        id="markdown-editor"
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
-                        rows={22}
-                        className="w-full bg-slate-950 border border-slate-900 rounded-2xl px-4 py-4 text-xs font-mono text-slate-200 outline-none focus:border-sky-500 transition-all resize-y leading-relaxed"
+                        className="w-full flex-1 bg-slate-950 border border-slate-900 rounded-2xl px-4 py-4 text-xs font-mono text-slate-200 outline-none focus:border-sky-500 transition-all resize-none leading-relaxed overflow-y-auto"
                         placeholder="# Hướng dẫn vận hành..."
                       />
                     </div>
                   </div>
                 ) : (
                   /* 2. READ MODE */
-                  <div className="space-y-6 animate-fade-in">
+                  <div className="flex-1 overflow-y-auto space-y-6 pr-2">
                     
                     {/* Header Details */}
                     <div className="border-b border-slate-900/60 pb-5">
