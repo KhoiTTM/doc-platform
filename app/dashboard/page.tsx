@@ -136,7 +136,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // Tab Control
-  const [activeTab, setActiveTab] = useState<"home" | "operations" | "projects" | "incidents" | "wiki" | "databricks">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "operations" | "projects" | "incidents" | "wiki" | "databricks">("databricks");
 
   // Databricks Logs Telemetry states
   const [databricksLogs, setDatabricksLogs] = useState<DatabricksLogType[]>([]);
@@ -798,86 +798,54 @@ export default function DashboardPage() {
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* 🧭 PERSISTENT PORTAL TABS LEFT ICON SIDEBAR */}
-      <nav className="w-16 border-r border-slate-900 bg-slate-950 flex flex-col items-center py-6 gap-6 shrink-0 relative z-20">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-sky-600 to-indigo-600 text-white shadow-lg mb-4 shrink-0">
-          <Activity className="h-5 w-5 animate-pulse" />
+      <nav className="w-16 hover:w-60 border-r border-slate-900 bg-slate-950 flex flex-col items-stretch py-6 px-3.5 gap-4 shrink-0 relative z-30 transition-all duration-300 group overflow-hidden">
+        {/* App Logo / Activity Icon */}
+        <div className="flex items-center gap-3.5 px-1.5 mb-6 shrink-0">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-sky-600 to-indigo-600 text-white shadow-lg shrink-0">
+            <Activity className="h-4.5 w-4.5 animate-pulse" />
+          </div>
+          <span className="font-display font-black text-xs text-white tracking-widest uppercase opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+            WorkOS
+          </span>
         </div>
 
         {/* Tab Buttons */}
-        <button
-          onClick={() => { setActiveTab("home"); setSearchQuery(""); }}
-          className={`p-3 rounded-2xl transition-all ${
-            activeTab === "home"
-              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
-          }`}
-          title="Trang chủ (Dashboard)"
-        >
-          <LayoutDashboard className="h-5 w-5" />
-        </button>
-
-        <button
-          onClick={() => { setActiveTab("operations"); setSearchQuery(""); }}
-          className={`p-3 rounded-2xl transition-all ${
-            activeTab === "operations"
-              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
-          }`}
-          title="Vận hành Daily Tasks"
-        >
-          <CheckSquare className="h-5 w-5" />
-        </button>
-
-        <button
-          onClick={() => { setActiveTab("projects"); setSearchQuery(""); }}
-          className={`p-3 rounded-2xl transition-all ${
-            activeTab === "projects"
-              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
-          }`}
-          title="Dự án Portfolio"
-        >
-          <Briefcase className="h-5 w-5" />
-        </button>
-
-        <button
-          onClick={() => { setActiveTab("incidents"); setSearchQuery(""); }}
-          className={`p-3 rounded-2xl transition-all relative ${
-            activeTab === "incidents"
-              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
-          }`}
-          title="Incident Hub (Sự cố)"
-        >
-          <Flame className="h-5 w-5" />
-          {activeIncidents.length > 0 && (
-            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-          )}
-        </button>
-
-        <button
-          onClick={() => { setActiveTab("wiki"); setSearchQuery(""); }}
-          className={`p-3 rounded-2xl transition-all ${
-            activeTab === "wiki"
-              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
-          }`}
-          title="Tài nguyên Wiki & Flow"
-        >
-          <BookOpen className="h-5 w-5" />
-        </button>
-
-        <button
-          onClick={() => { setActiveTab("databricks"); setSearchQuery(""); }}
-          className={`p-3 rounded-2xl transition-all ${
-            activeTab === "databricks"
-              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
-              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
-          }`}
-          title="Giám sát Log ETL & BI (Real-time)"
-        >
-          <Cpu className="h-5 w-5 text-sky-450" />
-        </button>
+        {[
+          { id: "databricks", label: "Platform Monitor", icon: Cpu, tooltip: "Real-time logs & metrics" },
+          { id: "home", label: "Dashboard Overview", icon: LayoutDashboard, tooltip: "Metrics & Status" },
+          { id: "operations", label: "Daily Operations", icon: CheckSquare, tooltip: "Daily tasks" },
+          { id: "projects", label: "Projects Portfolio", icon: Briefcase, tooltip: "Project tracking" },
+          { id: "incidents", label: "Incidents Hub", icon: Flame, tooltip: "Active incidents", badge: activeIncidents.length },
+          { id: "wiki", label: "Wiki & Knowledge", icon: BookOpen, tooltip: "Documentation & Wiki" }
+        ].map(tab => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id as any); setSearchQuery(""); }}
+              className={`flex items-center gap-3.5 p-3 rounded-2xl transition-all w-full relative ${
+                active
+                  ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30 border border-transparent"
+              }`}
+              title={tab.tooltip}
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              <span className="font-mono text-[10.5px] font-black uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+                {tab.label}
+              </span>
+              {tab.badge && tab.badge > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 animate-ping group-hover:hidden" />
+              )}
+              {tab.badge && tab.badge > 0 && (
+                <span className="hidden group-hover:flex items-center justify-center ml-auto px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-450 border border-rose-500/30 text-[8.5px] font-black font-mono">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {/* CORE WORKSPACE ROUTER */}
@@ -2937,10 +2905,10 @@ export default function DashboardPage() {
 import datetime
 
 def push_workos_log(source, category, job_name, status, severity, duration, message, metric_value=None):
-    url = "https://ljqycbcvqfdgekufwolw.supabase.co/rest/v1/platform_monitor_logs"
+    url = "<YOUR_SUPABASE_URL>/rest/v1/platform_monitor_logs"
     headers = {
-        "apikey": "sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ",
-        "Authorization": "Bearer sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ",
+        "apikey": "<YOUR_SUPABASE_ANON_KEY>",
+        "Authorization": "Bearer <YOUR_SUPABASE_ANON_KEY>",
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
@@ -2983,10 +2951,10 @@ push_workos_log(
 import datetime
 
 def push_workos_log(source, category, job_name, status, severity, duration, message, metric_value=None):
-    url = "https://ljqycbcvqfdgekufwolw.supabase.co/rest/v1/platform_monitor_logs"
+    url = "<YOUR_SUPABASE_URL>/rest/v1/platform_monitor_logs"
     headers = {
-        "apikey": "sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ",
-        "Authorization": "Bearer sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ",
+        "apikey": "<YOUR_SUPABASE_ANON_KEY>",
+        "Authorization": "Bearer <YOUR_SUPABASE_ANON_KEY>",
         "Content-Type": "application/json",
         "Prefer": "return=minimal"
     }
@@ -3015,9 +2983,9 @@ def push_workos_log(source, category, job_name, status, severity, duration, mess
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">2. Azure Data Factory Web Activity / cURL Payload (REST API)</span>
                             <button 
                               onClick={() => {
-                                navigator.clipboard.writeText(`curl -X POST "https://ljqycbcvqfdgekufwolw.supabase.co/rest/v1/platform_monitor_logs" \\
-  -H "apikey: sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ" \\
-  -H "Authorization: Bearer sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ" \\
+                                navigator.clipboard.writeText(`curl -X POST "<YOUR_SUPABASE_URL>/rest/v1/platform_monitor_logs" \\
+  -H "apikey: <YOUR_SUPABASE_ANON_KEY>" \\
+  -H "Authorization: Bearer <YOUR_SUPABASE_ANON_KEY>" \\
   -H "Content-Type: application/json" \\
   -d '{
     "source": "azure",
@@ -3038,9 +3006,9 @@ def push_workos_log(source, category, job_name, status, severity, duration, mess
                             </button>
                           </div>
                           <pre className="bg-slate-950 border border-slate-900 rounded-xl p-3 text-[9.5px] font-mono text-slate-300 leading-relaxed overflow-x-auto select-all max-h-48 overflow-y-auto">
-{`curl -X POST "https://ljqycbcvqfdgekufwolw.supabase.co/rest/v1/platform_monitor_logs" \\
-  -H "apikey: sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ" \\
-  -H "Authorization: Bearer sb_publishable_nkX4b3_1ceMqm15Ky_k3MQ_yIVKsfOJ" \\
+{`curl -X POST "<YOUR_SUPABASE_URL>/rest/v1/platform_monitor_logs" \\
+  -H "apikey: <YOUR_SUPABASE_ANON_KEY>" \\
+  -H "Authorization: Bearer <YOUR_SUPABASE_ANON_KEY>" \\
   -H "Content-Type: application/json" \\
   -d '{
     "source": "azure",
