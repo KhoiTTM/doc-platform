@@ -670,10 +670,19 @@ export default function DashboardPage() {
 
   const startEditingTask = (task: TaskType) => {
     setEditTaskTitle(task.title);
-    setEditTaskBU(task.bu || "Data");
-    setEditTaskRequester(task.requester || "CoolBlood");
-    setEditTaskMarkdown(task.details_markdown || "# Mô tả chi tiết Yêu cầu & Giải pháp...");
+    setEditTaskBU(task.bu || "");
+    setEditTaskRequester(task.requester || "");
+    setEditTaskMarkdown(task.details_markdown || "");
     setIsEditingTask(true);
+  };
+
+  // Backdrop click auto-saves (if editing) and closes modal
+  const handleBackdropClick = async () => {
+    if (isEditingTask) {
+      await handleUpdateTaskDetails();
+    }
+    setActiveTask(null);
+    setIsEditingTask(false);
   };
 
   // Operations: Delete task
@@ -1054,298 +1063,317 @@ export default function DashboardPage() {
 
             {/* ==================== TAB 2: VẬN HÀNH (OPERATIONS) ==================== */}
             {activeTab === "operations" && (
-              <main className="flex-1 overflow-y-auto px-6 py-10 sm:px-12">
+              <main className="flex-1 overflow-y-auto px-6 py-10 sm:px-12 relative">
                 <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-900 pb-5">
                     <div className="space-y-1">
                       <h1 className="font-display text-2xl font-black text-white">Daily Operations Hub</h1>
-                      <p className="text-xs text-slate-400">Manage operational workflow, quality check (QC) tasks, and data engineering pipelines.</p>
+                      <p className="text-xs text-slate-400">Manage daily pipeline quality checks (QC) and automated task tracking.</p>
                     </div>
                   </div>
 
-                  {activeTask ? (
-                    <div className="space-y-6 animate-fade-in">
-                      {/* Header with Back button */}
-                      <div className="flex items-center justify-between border-b border-slate-900 pb-4">
+                  {/* Create New Task Form */}
+                  <form onSubmit={handleCreateTask} className="p-4 rounded-2xl border border-slate-900 bg-slate-950/40 flex flex-col md:flex-row gap-3">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Add new daily operations task..."
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      className="flex-1 bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all"
+                    />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Department (e.g. Sales, BI)..."
+                      value={newTaskBU}
+                      onChange={(e) => setNewTaskBU(e.target.value)}
+                      className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all md:w-48"
+                    />
+                    <input
+                      type="email"
+                      required
+                      placeholder="Assignee Email..."
+                      value={newTaskRequester}
+                      onChange={(e) => setNewTaskRequester(e.target.value)}
+                      className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all md:w-60"
+                    />
+                    <button
+                      type="submit"
+                      disabled={taskCreateLoading}
+                      className="px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-xs font-bold text-white shadow shadow-sky-500/10 transition-all shrink-0 flex items-center justify-center gap-1.5"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Task
+                    </button>
+                  </form>
+
+                  {/* Daily Tasks Table */}
+                  <div className="glass-card rounded-2xl border border-slate-900 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-950/60 border-b border-slate-900 text-slate-500 uppercase tracking-widest font-black text-[10px]">
+                            <th className="p-4 w-12">Status</th>
+                            <th className="p-4">Daily Operational Tasks</th>
+                            <th className="p-4 w-40">Department</th>
+                            <th className="p-4 w-48">Assignee Email</th>
+                            <th className="p-4 w-32">Created Date</th>
+                            <th className="p-4 w-32">Completed Date</th>
+                            <th className="p-4 text-right w-16">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-900 bg-slate-950/10">
+                          {tasks.map(task => (
+                            <tr 
+                              key={task.id} 
+                              onClick={() => {
+                                startEditingTask(task);
+                                setActiveTask(task);
+                              }}
+                              className="hover:bg-slate-900/40 cursor-pointer transition-all"
+                            >
+                              <td className="p-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleToggleTask(task)}
+                                  className={`flex h-5 w-5 items-center justify-center rounded-lg border transition-all ${
+                                    task.status === "done"
+                                      ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
+                                      : "border-slate-800 hover:border-sky-500/50 text-transparent hover:text-slate-500"
+                                  }`}
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                              <td className="p-4">
+                                <span className={`font-bold transition-all ${
+                                  task.status === "done" ? "text-slate-500 line-through" : "text-white"
+                                }`}>
+                                  {task.title}
+                                </span>
+                              </td>
+                              <td className="p-4 whitespace-nowrap">
+                                <span className="px-2 py-0.5 rounded bg-sky-950/20 border border-sky-900/40 text-[10px] text-sky-400 font-bold">
+                                  {task.bu || "Data"}
+                                </span>
+                              </td>
+                              <td className="p-4 whitespace-nowrap text-slate-300 font-medium break-all max-w-[12rem] overflow-hidden text-ellipsis">
+                                {task.requester || "System"}
+                              </td>
+                              <td className="p-4 text-slate-400 whitespace-nowrap">
+                                {task.request_date ? new Date(task.request_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(task.due_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })}
+                              </td>
+                              <td className="p-4 text-slate-400 whitespace-nowrap">
+                                {task.completion_date ? new Date(task.completion_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : "—"}
+                              </td>
+                              <td className="p-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  className="p-1 rounded text-slate-600 hover:text-rose-450 hover:bg-rose-950/10 transition-all"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {tasks.length === 0 && (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-slate-600 italic">
+                                No operational tasks recorded.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 📌 DETAIL POPUP OVERLAY MODAL */}
+                {activeTask && (
+                  <div 
+                    onClick={handleBackdropClick}
+                    className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+                  >
+                    <div 
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) {
+                          handleUpdateTaskDetails();
+                        }
+                      }}
+                      className="relative w-full max-w-3xl glass-card border border-slate-900 bg-slate-950 p-6 sm:p-8 rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
+                    >
+                      {/* Modal Header */}
+                      <div className="flex items-center justify-between border-b border-slate-900 pb-4 shrink-0">
+                        <div className="flex items-center gap-3">
+                          <span className={`h-2 w-2 rounded-full ${isEditingTask ? 'bg-sky-500 animate-pulse' : 'bg-emerald-500'}`} />
+                          <span className="font-mono text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            {isEditingTask ? "Edit Mode (Click background card to save & view)" : "View Mode (Click inside body to edit)"}
+                          </span>
+                        </div>
                         <button
                           onClick={() => { setActiveTask(null); setIsEditingTask(false); }}
-                          className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white transition-all bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-xl"
+                          className="h-8 w-8 rounded-xl border border-slate-900 hover:border-slate-800 text-slate-400 hover:text-white transition-all flex items-center justify-center text-sm font-bold bg-slate-950/50"
                         >
-                          <span>← Back to Task List</span>
+                          ✕
                         </button>
-                        <div className="flex items-center gap-2">
+                      </div>
+
+                      {/* Modal Scrollable Content Container */}
+                      <div className="flex-1 overflow-y-auto py-5 space-y-6 min-h-0">
+                        {isEditingTask ? (
+                          /* ================= EDIT MODE ================= */
+                          <div className="space-y-5">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-1.5 md:col-span-2">
+                                <label className="text-[10px] font-black uppercase text-slate-500">Task Title</label>
+                                <input
+                                  type="text"
+                                  value={editTaskTitle}
+                                  onChange={(e) => setEditTaskTitle(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all font-bold"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase text-slate-500">Department (BU)</label>
+                                <input
+                                  type="text"
+                                  value={editTaskBU}
+                                  onChange={(e) => setEditTaskBU(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
+                                  placeholder="e.g. Sales, BI, Operations"
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase text-slate-500">Assignee Email</label>
+                                <input
+                                  type="email"
+                                  value={editTaskRequester}
+                                  onChange={(e) => setEditTaskRequester(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
+                                  placeholder="user@domain.com"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Markdown Workspace Section */}
+                            <div className="space-y-3">
+                              <span className="text-xs font-black uppercase tracking-wider text-slate-400">Task Specifications & Resolution Details (Markdown)</span>
+                              
+                              {/* Live Markdown Toolbar */}
+                              <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl border border-slate-900 bg-slate-950/85 shrink-0">
+                                <button type="button" onClick={() => insertTaskMarkdown("**", "**")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Bold Text"><Bold className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => insertTaskMarkdown("*", "*")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Italic Text"><Italic className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => insertTaskMarkdown("# ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => insertTaskMarkdown("## ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></button>
+                                <div className="h-4 w-px bg-slate-900" />
+                                <button type="button" onClick={() => insertTaskMarkdown("| Header | Column 2 |\n|---|---|\n| Value 1 | Value 2 |", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Insert Table Template"><TableIcon className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => insertTaskMarkdown("```sql\n", "\n```")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="SQL Code Block"><CodeIcon className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => insertTaskMarkdown("- ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Bulleted List"><ListIcon className="h-3.5 w-3.5" /></button>
+                                <div className="h-4 w-px bg-slate-900" />
+                                <button type="button" onClick={() => insertTaskMarkdown("<span style='color: #38bdf8'>", "</span>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Highlight blue"><Paintbrush className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => insertTaskMarkdown("<div align='center'>\n", "\n</div>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Center Align"><AlignCenter className="h-3.5 w-3.5" /></button>
+                                <button type="button" onClick={() => triggerImagePicker("task")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Upload/Insert Image"><ImageIcon className="h-3.5 w-3.5" /></button>
+                              </div>
+
+                              <textarea
+                                id="markdown-editor"
+                                rows={10}
+                                value={editTaskMarkdown}
+                                onChange={(e) => setEditTaskMarkdown(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-900 rounded-2xl p-4 text-xs font-mono text-slate-300 outline-none focus:border-sky-500/80 transition-all placeholder:text-slate-700 min-h-[180px]"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          /* ================= VIEW MODE ================= */
+                          <div 
+                            onClick={() => startEditingTask(activeTask)}
+                            className="space-y-6 cursor-pointer group"
+                            title="Click anywhere inside to Edit"
+                          >
+                            <div className="flex items-start justify-between">
+                              <h2 className="text-lg font-black text-white group-hover:text-sky-400 transition-colors tracking-tight">
+                                {activeTask.title}
+                              </h2>
+                            </div>
+
+                            {/* Task Metadata Cards */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-2xl bg-slate-950/40 border border-slate-900/60">
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Department</p>
+                                <p className="text-xs font-black text-white mt-0.5">{activeTask.bu || "Data"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Assignee Email</p>
+                                <p className="text-xs font-black text-white mt-0.5 break-all">{activeTask.requester || "System"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Created Date</p>
+                                <p className="text-xs text-slate-300 mt-0.5">
+                                  {activeTask.request_date ? new Date(activeTask.request_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(activeTask.due_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Status</p>
+                                <p className="mt-0.5">
+                                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
+                                    activeTask.status === "done"
+                                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                                      : "border-amber-500/20 bg-amber-500/10 text-amber-400"
+                                  }`}>
+                                    {activeTask.status.toUpperCase()}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Markdown Render Area */}
+                            <div className="space-y-2">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Task Specifications & Resolution Details</span>
+                              <div className="glass-card rounded-2xl border border-slate-900 p-6 bg-slate-950/40 prose prose-slate max-w-none text-slate-300 min-h-[150px] group-hover:border-slate-800 transition-colors">
+                                <ReactMarkdown>{activeTask.details_markdown || "*No description or solution details have been recorded for this task. Click to add.*"}</ReactMarkdown>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Modal Footer (Action Info) */}
+                      <div className="border-t border-slate-900 pt-4 shrink-0 flex items-center justify-between">
+                        <span className="text-[9px] font-mono text-slate-650">
+                          {isEditingTask 
+                            ? "Auto-saves when you click on the backdrop or modal background card" 
+                            : "Click anywhere on the body area to enter edit mode"}
+                        </span>
+                        <div className="flex gap-2">
                           {isEditingTask ? (
-                            <>
-                              <button
-                                onClick={() => setIsEditingTask(false)}
-                                className="px-4 py-1.5 rounded-xl border border-slate-900 hover:border-slate-800 text-xs font-bold text-slate-400 hover:text-white transition-all"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={handleUpdateTaskDetails}
-                                className="px-4 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-xs font-bold text-white shadow shadow-sky-500/10 transition-all flex items-center gap-1"
-                              >
-                                <Save className="h-3.5 w-3.5" />
-                                Save Changes
-                              </button>
-                            </>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateTaskDetails();
+                              }}
+                              className="px-4 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-xs font-bold text-white shadow shadow-sky-500/10 transition-all flex items-center gap-1"
+                            >
+                              Done Editing
+                            </button>
                           ) : (
                             <button
-                              onClick={() => startEditingTask(activeTask)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEditingTask(activeTask);
+                              }}
                               className="px-4 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center gap-1"
                             >
-                              <Edit3 className="h-3.5 w-3.5 text-sky-400" />
-                              Edit Task
+                              Edit Specifications
                             </button>
                           )}
                         </div>
                       </div>
-
-                      {/* Task Details Info Drawer */}
-                      <div className="glass-card rounded-2xl border border-slate-900 p-5 sm:p-6 space-y-5 bg-slate-950/20">
-                        {isEditingTask ? (
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1.5 col-span-1 md:col-span-3">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Task Title</label>
-                              <input
-                                type="text"
-                                value={editTaskTitle}
-                                onChange={(e) => setEditTaskTitle(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Department (BU)</label>
-                              <input
-                                type="text"
-                                value={editTaskBU}
-                                onChange={(e) => setEditTaskBU(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
-                                placeholder="e.g. Sales, Finance, BI"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Assignee Email</label>
-                              <input
-                                type="email"
-                                value={editTaskRequester}
-                                onChange={(e) => setEditTaskRequester(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
-                                placeholder="user@domain.com"
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Current Status</label>
-                              <div className="h-8.5 flex items-center">
-                                <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-md border ${
-                                  activeTask.status === "done"
-                                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                                    : "border-amber-500/20 bg-amber-500/10 text-amber-400"
-                                }`}>
-                                  {activeTask.status === "done" ? "Completed" : "Pending (Todo)"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Department</p>
-                              <p className="text-xs font-black text-white mt-1">{activeTask.bu || "Data"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Assignee Email</p>
-                              <p className="text-xs font-black text-white mt-1 break-all">{activeTask.requester || "System"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Created Date</p>
-                              <p className="text-xs text-slate-300 mt-1">
-                                {activeTask.request_date ? new Date(activeTask.request_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(activeTask.due_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Completed Date</p>
-                              <p className="text-xs text-slate-300 mt-1">
-                                {activeTask.completion_date ? new Date(activeTask.completion_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : "—"}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Status</p>
-                              <p className="mt-1">
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
-                                  activeTask.status === "done"
-                                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
-                                    : "border-amber-500/20 bg-amber-500/10 text-amber-400"
-                                }`}>
-                                  {activeTask.status.toUpperCase()}
-                                </span>
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Markdown Workspace Section */}
-                      <div className="grid grid-cols-1 gap-6">
-                        {isEditingTask ? (
-                          <div className="space-y-3">
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Task Specifications & Resolution Details (Markdown Editor)</span>
-                            
-                            {/* Live Markdown Toolbar */}
-                            <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl border border-slate-900 bg-slate-950/80">
-                              <button type="button" onClick={() => insertTaskMarkdown("**", "**")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Bold Text"><Bold className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("*", "*")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Italic Text"><Italic className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("# ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("## ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></button>
-                              <div className="h-4 w-px bg-slate-900" />
-                              <button type="button" onClick={() => insertTaskMarkdown("| Header | Column 2 |\n|---|---|\n| Value 1 | Value 2 |", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Insert Table Template"><TableIcon className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("```sql\n", "\n```")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="SQL Code Block"><CodeIcon className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("- ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Bulleted List"><ListIcon className="h-3.5 w-3.5" /></button>
-                              <div className="h-4 w-px bg-slate-900" />
-                              <button type="button" onClick={() => insertTaskMarkdown("<span style='color: #38bdf8'>", "</span>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Highlight blue"><Paintbrush className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("<div align='center'>\n", "\n</div>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Center Align"><AlignCenter className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => triggerImagePicker("task")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Upload/Insert Image"><ImageIcon className="h-3.5 w-3.5" /></button>
-                            </div>
-
-                            <textarea
-                              id="markdown-editor"
-                              rows={16}
-                              value={editTaskMarkdown}
-                              onChange={(e) => setEditTaskMarkdown(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-900 rounded-2xl p-4 text-xs font-mono text-slate-300 outline-none focus:border-sky-500/80 transition-all placeholder:text-slate-700"
-                            />
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Task Specifications & Resolution Details</span>
-                            <div className="glass-card rounded-2xl border border-slate-900 p-6 sm:p-8 bg-slate-950/40 prose prose-slate max-w-none text-slate-300">
-                              <ReactMarkdown>{activeTask.details_markdown || "*No description or solution details have been recorded for this task.*"}</ReactMarkdown>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                     </div>
-                  ) : (
-                    <>
-                      {/* Create New Task Form */}
-                      <form onSubmit={handleCreateTask} className="p-4 rounded-2xl border border-slate-900 bg-slate-950/40 flex flex-col md:flex-row gap-3">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Add new daily operations task..."
-                          value={newTaskTitle}
-                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                          className="flex-1 bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 outline-none focus:border-sky-500 transition-all"
-                        />
-                        <input
-                          type="text"
-                          required
-                          placeholder="Department (e.g. Sales, BI)..."
-                          value={newTaskBU}
-                          onChange={(e) => setNewTaskBU(e.target.value)}
-                          className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all md:w-48"
-                        />
-                        <input
-                          type="email"
-                          required
-                          placeholder="Assignee Email..."
-                          value={newTaskRequester}
-                          onChange={(e) => setNewTaskRequester(e.target.value)}
-                          className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all md:w-60"
-                        />
-                        <button
-                          type="submit"
-                          disabled={taskCreateLoading}
-                          className="px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-xs font-bold text-white shadow shadow-sky-500/10 transition-all shrink-0 flex items-center justify-center gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add Task
-                        </button>
-                      </form>
-
-                      {/* Daily Tasks Table */}
-                      <div className="glass-card rounded-2xl border border-slate-900 overflow-hidden">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                              <tr className="bg-slate-950/60 border-b border-slate-900 text-slate-500 uppercase tracking-widest font-black text-[10px]">
-                                <th className="p-4 w-12">Status</th>
-                                <th className="p-4">Daily Operational Tasks</th>
-                                <th className="p-4 w-40">Department</th>
-                                <th className="p-4 w-48">Assignee Email</th>
-                                <th className="p-4 w-32">Created Date</th>
-                                <th className="p-4 w-32">Completed Date</th>
-                                <th className="p-4 text-right w-16">Action</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-900 bg-slate-950/10">
-                              {tasks.map(task => (
-                                <tr 
-                                  key={task.id} 
-                                  onClick={() => {
-                                    setActiveTask(task);
-                                    setIsEditingTask(false);
-                                  }}
-                                  className="hover:bg-slate-900/40 cursor-pointer transition-all"
-                                >
-                                  <td className="p-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <button
-                                      onClick={() => handleToggleTask(task)}
-                                      className={`flex h-5 w-5 items-center justify-center rounded-lg border transition-all ${
-                                        task.status === "done"
-                                          ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
-                                          : "border-slate-800 hover:border-sky-500/50 text-transparent hover:text-slate-500"
-                                      }`}
-                                    >
-                                      <Check className="h-3.5 w-3.5" />
-                                    </button>
-                                  </td>
-                                  <td className="p-4">
-                                    <span className={`font-bold transition-all ${
-                                      task.status === "done" ? "text-slate-500 line-through" : "text-white"
-                                    }`}>
-                                      {task.title}
-                                    </span>
-                                  </td>
-                                  <td className="p-4 whitespace-nowrap">
-                                    <span className="px-2 py-0.5 rounded bg-sky-950/20 border border-sky-900/40 text-[10px] text-sky-400 font-bold">
-                                      {task.bu || "Data"}
-                                    </span>
-                                  </td>
-                                  <td className="p-4 whitespace-nowrap text-slate-300 font-medium break-all max-w-[12rem] overflow-hidden text-ellipsis">
-                                    {task.requester || "System"}
-                                  </td>
-                                  <td className="p-4 text-slate-400 whitespace-nowrap">
-                                    {task.request_date ? new Date(task.request_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(task.due_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })}
-                                  </td>
-                                  <td className="p-4 text-slate-400 whitespace-nowrap">
-                                    {task.completion_date ? new Date(task.completion_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : "—"}
-                                  </td>
-                                  <td className="p-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                    <button
-                                      onClick={() => handleDeleteTask(task.id)}
-                                      className="p-1 rounded text-slate-600 hover:text-rose-450 hover:bg-rose-950/10 transition-all"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                              {tasks.length === 0 && (
-                                <tr>
-                                  <td colSpan={7} className="p-8 text-center text-slate-600 italic">
-                                    No operational tasks recorded.
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                  </div>
+                )}
               </main>
             )}
 
