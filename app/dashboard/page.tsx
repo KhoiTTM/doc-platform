@@ -145,7 +145,6 @@ export default function DashboardPage() {
   const [dbLogsFilterSeverity, setDbLogsFilterSeverity] = useState<string>("all");
   const [dbLogsFilterPlatform, setDbLogsFilterPlatform] = useState<string>("all");
   const [dbLogsSearch, setDbLogsSearch] = useState<string>("");
-  const [refreshCountdown, setRefreshCountdown] = useState<number>(3600);
   const [dbSubTab, setDbSubTab] = useState<"dashboard" | "logs" | "cost" | "jobs" | "settings">("dashboard");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
@@ -260,17 +259,11 @@ export default function DashboardPage() {
     loadDatabricksLogs();
   }, [loadDatabricksLogs]);
 
-  // Countdown timer for 10s auto-refresh fallback
+  // Auto-refresh fallback every 1 hour (3600s)
   useEffect(() => {
     const timer = setInterval(() => {
-      setRefreshCountdown(prev => {
-        if (prev <= 1) {
-          loadDatabricksLogs();
-          return 3600;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      loadDatabricksLogs();
+    }, 3600000);
 
     return () => clearInterval(timer);
   }, [loadDatabricksLogs]);
@@ -761,39 +754,7 @@ export default function DashboardPage() {
   const departments = ["Finance", "Supply Chain", "Sales"];
   const getProjectsByDept = (dept: string) => projects.filter(p => p.department === dept);
 
-  // Platform Detection Helper
-  const getPlatformInfo = (jobName: string) => {
-    const lower = jobName.toLowerCase();
-    if (lower.includes("adf") || lower.includes("factory")) {
-      return { name: "ADF", color: "text-cyan-400 border-cyan-500/20 bg-cyan-500/10", label: "Azure Data Factory" };
-    }
-    if (lower.includes("pbi") || lower.includes("power") || lower.includes("tabular")) {
-      return { name: "Power BI", color: "text-amber-400 border-amber-500/20 bg-amber-500/10", label: "Power BI Semantic" };
-    }
-    if (lower.includes("synapse")) {
-      return { name: "Synapse", color: "text-purple-400 border-purple-500/20 bg-purple-500/10", label: "Azure Synapse" };
-    }
-    return { name: "Databricks", color: "text-indigo-400 border-indigo-500/20 bg-indigo-500/10", label: "Azure Databricks" };
-  };
 
-  // Dynamic stats calculated from active logs
-  const totalRuns = databricksLogs.length;
-  const successRuns = databricksLogs.filter(l => l.status === "success").length;
-  const failedRuns = databricksLogs.filter(l => l.status === "failed").length;
-  const runningRuns = databricksLogs.filter(l => l.status === "running").length;
-  const successRate = totalRuns > 0 ? ((successRuns / Math.max(1, totalRuns - runningRuns)) * 100).toFixed(0) : "100";
-  const avgDuration = totalRuns > 0 ? (databricksLogs.reduce((acc, curr) => acc + curr.duration, 0) / totalRuns).toFixed(0) : "0";
-
-  // Filtered Logs
-  const filteredLogs = databricksLogs.filter(log => {
-    const platformInfo = getPlatformInfo(log.job_name);
-    const matchesPlatform = dbLogsFilterPlatform === "all" || platformInfo.name.toLowerCase() === dbLogsFilterPlatform.toLowerCase();
-    const matchesSearch = log.job_name.toLowerCase().includes(dbLogsSearch.toLowerCase()) || 
-                          log.message.toLowerCase().includes(dbLogsSearch.toLowerCase());
-    const matchesStatus = dbLogsFilterStatus === "all" || log.status === dbLogsFilterStatus;
-    const matchesSeverity = dbLogsFilterSeverity === "all" || log.severity === dbLogsFilterSeverity;
-    return matchesPlatform && matchesSearch && matchesStatus && matchesSeverity;
-  });
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -823,7 +784,7 @@ export default function DashboardPage() {
           return (
             <button
               key={tab.id}
-              onClick={() => { setActiveTab(tab.id as any); setSearchQuery(""); }}
+              onClick={() => { setActiveTab(tab.id as "home" | "operations" | "projects" | "incidents" | "wiki" | "databricks"); setSearchQuery(""); }}
               className={`flex items-center gap-3.5 p-3 rounded-2xl transition-all w-full relative ${
                 active
                   ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"

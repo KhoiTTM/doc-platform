@@ -40,7 +40,7 @@ export default function LoginPage() {
           document.cookie = "dev_bypass=true; path=/; max-age=86400";
           try {
             await supabase.auth.signInWithPassword({ email, password });
-          } catch (e) {
+          } catch {
             // ignore
           }
           router.refresh();
