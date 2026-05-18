@@ -39,8 +39,7 @@ import {
   Cpu,
   Terminal,
   RefreshCw,
-  Play,
-  RotateCcw
+  Play
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -114,71 +113,7 @@ interface DatabricksLogType {
   message: string;
 }
 
-const fallbackDatabricksLogs: DatabricksLogType[] = [
-  {
-    id: "fallback-1",
-    job_name: "AX-Bronze-Ingestion",
-    status: "success",
-    severity: "INFO",
-    duration: 345,
-    started_at: new Date(Date.now() - 5 * 60000).toISOString(),
-    message: "Successfully ingested 42,105 rows from ERP source AX DB. No schema drifts detected."
-  },
-  {
-    id: "fallback-2",
-    job_name: "dbt-Silver-Incremental-Core",
-    status: "running",
-    severity: "INFO",
-    duration: 124,
-    started_at: new Date(Date.now() - 2 * 60000).toISOString(),
-    message: "Running model: stg_ax_sales_orders (2/14 models built successfully)..."
-  },
-  {
-    id: "fallback-3",
-    job_name: "Gold-AAS-Tabular-Refresh",
-    status: "failed",
-    severity: "CRITICAL",
-    duration: 45,
-    started_at: new Date(Date.now() - 15 * 60000).toISOString(),
-    message: "Failed to connect to Azure AAS endpoint: AAS-Tabular-Live-Connection. Timeout exceeded during execution."
-  },
-  {
-    id: "fallback-4",
-    job_name: "AX-Bronze-Ingestion",
-    status: "success",
-    severity: "INFO",
-    duration: 360,
-    started_at: new Date(Date.now() - 60 * 60000).toISOString(),
-    message: "Daily incremental ingest run complete. All source tables mapped correctly."
-  },
-  {
-    id: "fallback-5",
-    job_name: "dbt-Silver-Incremental-Core",
-    status: "failed",
-    severity: "ERROR",
-    duration: 640,
-    started_at: new Date(Date.now() - 120 * 60000).toISOString(),
-    message: "dbt test error: duplicate key violates unique constraint in silver.orders_fact. Pipeline aborted."
-  },
-  {
-    id: "fallback-6",
-    job_name: "Databricks-Spark-Cluster-Prewarm",
-    status: "success",
-    severity: "INFO",
-    duration: 180,
-    started_at: new Date(Date.now() - 180 * 60000).toISOString(),
-    message: "Cluster drivers provisioned successfully. 4 worker nodes warmed and scaling up."
-  },
-  {
-    id: "fallback-7",
-    job_name: "Gold-AAS-Tabular-Refresh",
-    status: "success",
-    severity: "INFO",
-    duration: 1240,
-    started_at: new Date(Date.now() - 240 * 60000).toISOString(),
-    message: "AAS Model chặng 5 live connection refreshed successfully. SLA 08:00 AM target met."
-  }
-];
+
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -199,6 +134,7 @@ export default function DashboardPage() {
   const [dbLogsLoading, setDbLogsLoading] = useState(false);
   const [dbLogsFilterStatus, setDbLogsFilterStatus] = useState<string>("all");
   const [dbLogsFilterSeverity, setDbLogsFilterSeverity] = useState<string>("all");
+  const [dbLogsFilterPlatform, setDbLogsFilterPlatform] = useState<string>("all");
   const [dbLogsSearch, setDbLogsSearch] = useState<string>("");
   const [refreshCountdown, setRefreshCountdown] = useState<number>(10);
 
@@ -285,7 +221,7 @@ export default function DashboardPage() {
 
   // ==================== DATABRICKS TELEMETRY LOGS WORKSPACE ====================
 
-  // Fetch Databricks telemetry job logs
+  // Fetch Databricks & ETL telemetry job logs from Supabase
   const loadDatabricksLogs = useCallback(async () => {
     try {
       setDbLogsLoading(true);
@@ -295,16 +231,14 @@ export default function DashboardPage() {
         .order("started_at", { ascending: false });
 
       if (error) {
-        console.warn("databricks_job_logs table not active yet or error. Falling back safely.", error);
-        setDatabricksLogs(fallbackDatabricksLogs);
-      } else if (data && data.length > 0) {
-        setDatabricksLogs(data as DatabricksLogType[]);
+        console.warn("databricks_job_logs table not active yet or error. Clean empty state.", error);
+        setDatabricksLogs([]);
       } else {
-        setDatabricksLogs(fallbackDatabricksLogs);
+        setDatabricksLogs((data as DatabricksLogType[]) || []);
       }
     } catch (err) {
       console.warn("Error running Databricks fetch logs:", err);
-      setDatabricksLogs(fallbackDatabricksLogs);
+      setDatabricksLogs([]);
     } finally {
       setDbLogsLoading(false);
     }
@@ -330,15 +264,24 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, [loadDatabricksLogs]);
 
-  // Quick Action: Trigger Databricks Job
+  // Quick Action: Simulate & Trigger Pipeline Log
   async function handleTriggerJob(jobName: string) {
+    const isADF = jobName.toLowerCase().includes("adf");
+    const isPBI = jobName.toLowerCase().includes("powerbi") || jobName.toLowerCase().includes("pbi");
+    
+    const messageText = isADF 
+      ? "ADF Pipeline 'Trigger-dbt-Job' launched manually. Dispatching execution context..." 
+      : isPBI 
+      ? "Power BI Tabular Live Model refresh triggered. Rebuilding partition segments..."
+      : "Spark Context provisioned. Running dbt transformation task: stg_orders_incremental...";
+
     const newLog = {
       job_name: jobName,
       status: "running" as const,
       severity: "INFO" as const,
       duration: 0,
       started_at: new Date().toISOString(),
-      message: `Manual launch trigger succeeded. Waking up Databricks context, starting driver node...`
+      message: messageText
     };
 
     try {
@@ -351,30 +294,29 @@ export default function DashboardPage() {
       if (!error && data) {
         setDatabricksLogs(prev => [data as DatabricksLogType, ...prev]);
       } else {
-        const fallbackLog: DatabricksLogType = {
-          id: `manual-${Math.random().toString(36).substring(2)}`,
+        // Fallback local append if DB error
+        const localLog: DatabricksLogType = {
+          id: `local-${Math.random().toString(36).substring(2)}`,
           ...newLog
         };
-        setDatabricksLogs(prev => [fallbackLog, ...prev]);
+        setDatabricksLogs(prev => [localLog, ...prev]);
       }
-    } catch (err) {
-      console.error(err);
-      // Fallback
-      const fallbackLog: DatabricksLogType = {
-        id: `manual-${Math.random().toString(36).substring(2)}`,
+    } catch {
+      const localLog: DatabricksLogType = {
+        id: `local-${Math.random().toString(36).substring(2)}`,
         ...newLog
       };
-      setDatabricksLogs(prev => [fallbackLog, ...prev]);
+      setDatabricksLogs(prev => [localLog, ...prev]);
     }
   }
 
-  // Quick Action: Reset databricks logs
+  // Quick Action: Clear all logs
   async function handleResetLogs() {
     try {
       await supabase.from("databricks_job_logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      setDatabricksLogs(fallbackDatabricksLogs);
+      setDatabricksLogs([]);
     } catch {
-      setDatabricksLogs(fallbackDatabricksLogs);
+      setDatabricksLogs([]);
     }
   }
 
@@ -747,7 +689,22 @@ export default function DashboardPage() {
   const departments = ["Finance", "Supply Chain", "Sales"];
   const getProjectsByDept = (dept: string) => projects.filter(p => p.department === dept);
 
-  // Dynamic stats calculated from active Databricks logs
+  // Platform Detection Helper
+  const getPlatformInfo = (jobName: string) => {
+    const lower = jobName.toLowerCase();
+    if (lower.includes("adf") || lower.includes("factory")) {
+      return { name: "ADF", color: "text-cyan-400 border-cyan-500/20 bg-cyan-500/10", label: "Azure Data Factory" };
+    }
+    if (lower.includes("pbi") || lower.includes("power") || lower.includes("tabular")) {
+      return { name: "Power BI", color: "text-amber-400 border-amber-500/20 bg-amber-500/10", label: "Power BI Semantic" };
+    }
+    if (lower.includes("synapse")) {
+      return { name: "Synapse", color: "text-purple-400 border-purple-500/20 bg-purple-500/10", label: "Azure Synapse" };
+    }
+    return { name: "Databricks", color: "text-indigo-400 border-indigo-500/20 bg-indigo-500/10", label: "Azure Databricks" };
+  };
+
+  // Dynamic stats calculated from active logs
   const totalRuns = databricksLogs.length;
   const successRuns = databricksLogs.filter(l => l.status === "success").length;
   const failedRuns = databricksLogs.filter(l => l.status === "failed").length;
@@ -757,11 +714,13 @@ export default function DashboardPage() {
 
   // Filtered Logs
   const filteredLogs = databricksLogs.filter(log => {
+    const platformInfo = getPlatformInfo(log.job_name);
+    const matchesPlatform = dbLogsFilterPlatform === "all" || platformInfo.name.toLowerCase() === dbLogsFilterPlatform.toLowerCase();
     const matchesSearch = log.job_name.toLowerCase().includes(dbLogsSearch.toLowerCase()) || 
                           log.message.toLowerCase().includes(dbLogsSearch.toLowerCase());
     const matchesStatus = dbLogsFilterStatus === "all" || log.status === dbLogsFilterStatus;
     const matchesSeverity = dbLogsFilterSeverity === "all" || log.severity === dbLogsFilterSeverity;
-    return matchesSearch && matchesStatus && matchesSeverity;
+    return matchesPlatform && matchesSearch && matchesStatus && matchesSeverity;
   });
 
   return (
@@ -843,7 +802,7 @@ export default function DashboardPage() {
               ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
               : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
           }`}
-          title="Giám sát Databricks (Real-time)"
+          title="Giám sát Log ETL & BI (Real-time)"
         >
           <Cpu className="h-5 w-5 text-sky-450" />
         </button>
@@ -2117,26 +2076,25 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* ==================== TAB 6: GIÁM SÁT DATABRICKS ==================== */}
+            {/* ==================== TAB 6: GIÁM SÁT LOG ETL & BI ==================== */}
             {activeTab === "databricks" && (
-              <div className="flex-1 flex flex-col overflow-hidden animate-fade-in px-6 py-8 sm:px-12">
-                {/* 📡 CYBERPUNK MONITORING HEADER */}
-                <header className="shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-5 mb-6">
+              <div className="flex-1 flex flex-col overflow-hidden animate-fade-in px-6 py-6 sm:px-10">
+                {/* 📡 CYBERPUNK TELEMETRY MONITOR HEADER */}
+                <header className="shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-4 mb-4">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
-                      <h1 className="font-display text-2xl font-black text-white tracking-tight uppercase">
-                        DATABRICKS REAL-TIME TELEMETRY
+                      <h1 className="font-display text-xl font-black text-white tracking-tight uppercase">
+                        CỔNG GIÁM SÁT & QUẢN TRỊ LOG ETL-BI
                       </h1>
                     </div>
-                    <p className="text-[11px] text-slate-400 font-medium mt-1 font-mono">
-                      [Live Spark clusters audit logs & dbt schema materialization telemetry logs]
+                    <p className="text-[10px] text-slate-400 font-medium mt-1 font-mono">
+                      [Real-time logs unified dashboard across Azure Data Factory, Azure Databricks, and Power BI]
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
-                    {/* Glowing Countdown Ring */}
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-cyan-500/20 bg-cyan-950/10 text-[10px] font-black text-cyan-400 tracking-wider font-mono">
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-cyan-500/20 bg-cyan-950/10 text-[9px] font-black text-cyan-400 tracking-wider font-mono">
                       <RefreshCw className={`h-3 w-3 ${dbLogsLoading ? 'animate-spin text-cyan-400' : ''}`} />
                       AUTO-REFRESH: {refreshCountdown}S
                     </div>
@@ -2144,143 +2102,146 @@ export default function DashboardPage() {
                     <button
                       onClick={loadDatabricksLogs}
                       disabled={dbLogsLoading}
-                      className="flex items-center justify-center p-2 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900 text-slate-400 hover:text-white transition-all"
-                      title="Tải lại ngay lập tức"
+                      className="flex items-center justify-center p-1.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900 text-slate-400 hover:text-white transition-all"
+                      title="Làm mới tức thì"
                     >
-                      <RefreshCw className={`h-4 w-4 ${dbLogsLoading ? 'animate-spin' : ''}`} />
+                      <RefreshCw className={`h-3.5 w-3.5 ${dbLogsLoading ? 'animate-spin' : ''}`} />
                     </button>
 
                     <button
                       onClick={handleResetLogs}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-900 hover:border-slate-850 hover:bg-rose-950/20 text-xs font-bold text-slate-500 hover:text-rose-400 transition-all"
-                      title="Khôi phục dữ liệu mẫu gốc"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-900 hover:border-slate-850 hover:bg-rose-950/20 text-[10px] font-bold text-slate-500 hover:text-rose-450 transition-all"
+                      title="Xóa toàn bộ logs khỏi hệ thống"
                     >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                      Reset logs
+                      Xóa Logs
                     </button>
                   </div>
                 </header>
 
-                {/* 📊 TELEMETRY HIGH-IMPACT METRICS GRID */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shrink-0">
-                  {/* Card 1: Active Clusters */}
-                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-2xl" />
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Spark Cluster</p>
-                    <div className="flex items-baseline gap-2 mt-2.5">
-                      <span className="text-xl font-black text-white">4 Nodes</span>
-                      <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded uppercase">Standard_DS3</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-emerald-400 font-bold">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Driver provisioned & stable
-                    </div>
+                {/* 📊 TELEMETRY COMPACT METRICS GRID */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 shrink-0">
+                  {/* Active Nodes */}
+                  <div className="backdrop-blur-md bg-slate-950/20 border border-slate-900 rounded-xl p-3 hover:border-slate-850 transition-all relative overflow-hidden group">
+                    <p className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest">Pipeline Cluster</p>
+                    <p className="text-base font-black text-white mt-1">4 Nodes Active</p>
+                    <p className="text-[9px] text-emerald-400 font-bold mt-1">✓ Telemetry online</p>
                   </div>
 
-                  {/* Card 2: Today Success Rate */}
-                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl" />
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tỉ Lệ Thành Công (Today)</p>
-                    <div className="flex items-baseline gap-2 mt-2.5">
-                      <span className={`text-xl font-black ${Number(successRate) >= 90 ? 'text-emerald-400' : Number(successRate) >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
-                        {successRate}%
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-bold">({successRuns}/{totalRuns - runningRuns} runs)</span>
-                    </div>
-                    <div className="mt-3 w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${successRate}%` }} />
-                    </div>
+                  {/* Success Rate */}
+                  <div className="backdrop-blur-md bg-slate-950/20 border border-slate-900 rounded-xl p-3 hover:border-slate-850 transition-all relative overflow-hidden group">
+                    <p className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest">Tỉ Lệ Thành Công</p>
+                    <p className={`text-base font-black mt-1 ${Number(successRate) >= 90 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {successRate}%
+                    </p>
+                    <p className="text-[9px] text-slate-500 font-bold mt-1">({successRuns}/{totalRuns - runningRuns} runs completed)</p>
                   </div>
 
-                  {/* Card 3: Failed Runs */}
-                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-2xl" />
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sự Cố Failed Jobs</p>
-                    <div className="flex items-baseline gap-2 mt-2.5">
-                      <span className={`text-xl font-black ${failedRuns > 0 ? 'text-rose-550 animate-pulse' : 'text-slate-400'}`}>
-                        {failedRuns} Jobs
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-2.5 font-bold">
-                      {failedRuns > 0 ? `${failedRuns} chặng cần kiểm tra lỗi khẩn cấp` : 'Tất cả pipeline vận hành an toàn'}
+                  {/* Failed Runs */}
+                  <div className="backdrop-blur-md bg-slate-950/20 border border-slate-900 rounded-xl p-3 hover:border-slate-850 transition-all relative overflow-hidden group">
+                    <p className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest">Sự Cố Lỗi Pipeline</p>
+                    <p className={`text-base font-black mt-1 ${failedRuns > 0 ? 'text-rose-500 animate-pulse' : 'text-slate-400'}`}>
+                      {failedRuns} Errors
+                    </p>
+                    <p className="text-[9px] text-slate-500 font-bold mt-1">
+                      {failedRuns > 0 ? 'Cần kiểm tra khẩn cấp' : 'Không có sự cố nào'}
                     </p>
                   </div>
 
-                  {/* Card 4: Avg Run Duration */}
-                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl" />
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Thời Gian Chạy Trung Bình</p>
-                    <div className="flex items-baseline gap-2 mt-2.5">
-                      <span className="text-xl font-black text-white">{avgDuration}s</span>
-                      <span className="text-[10px] text-slate-500 font-bold">/ job run</span>
-                    </div>
-                    <p className="text-[10px] text-indigo-400 mt-2.5 font-bold">
-                      SLA 08:00 AM Tabular target: Met
-                    </p>
+                  {/* Avg Run Duration */}
+                  <div className="backdrop-blur-md bg-slate-950/20 border border-slate-900 rounded-xl p-3 hover:border-slate-850 transition-all relative overflow-hidden group">
+                    <p className="text-[8.5px] font-black text-slate-500 uppercase tracking-widest">Thời Gian Chạy TB</p>
+                    <p className="text-base font-black text-white mt-1">{avgDuration}s</p>
+                    <p className="text-[9px] text-indigo-400 font-bold mt-1">SLA 08:00 AM Met</p>
                   </div>
                 </div>
 
-                {/* 🎛️ FILTERS, SEARCH & DIRECT TRIPLE-TRIGGER PANEL */}
-                <div className="shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4.5 border border-slate-900 rounded-2xl bg-slate-950/30 mb-6">
-                  {/* Left: Searches & Filters */}
-                  <div className="flex flex-wrap items-center gap-3 flex-1">
-                    <div className="relative min-w-[200px] flex-1">
-                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                {/* 🎛️ COMPACT FILTER & DIRECT MULTI-PLATFORM SIMULATORS PANEL */}
+                <div className="shrink-0 flex flex-col gap-3 p-3.5 border border-slate-900 rounded-xl bg-slate-950/30 mb-4">
+                  {/* Top: Simulations */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-900 pb-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider font-mono">Bắn Log Giả Lập:</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => handleTriggerJob("ADF: Ingest-ERP-AX-Bronze")}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-[9px] font-bold text-cyan-400 border border-cyan-500/15 transition-all"
+                      >
+                        <Play className="h-2.5 w-2.5" />
+                        1. Trigger ADF
+                      </button>
+
+                      <button
+                        onClick={() => handleTriggerJob("Databricks: dbt-Silver-Incremental")}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-[9px] font-bold text-indigo-400 border border-indigo-500/15 transition-all"
+                      >
+                        <Play className="h-2.5 w-2.5" />
+                        2. Run Databricks
+                      </button>
+
+                      <button
+                        onClick={() => handleTriggerJob("PowerBI: Tabular-Gold-Refresh")}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-[9px] font-bold text-amber-450 border border-amber-500/15 transition-all"
+                      >
+                        <Play className="h-2.5 w-2.5" />
+                        3. Refresh PBI
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Bottom: Filtering Row */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[150px]">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
                       <input
                         type="text"
-                        placeholder="Tìm theo Tên Job hoặc Nội dung logs..."
+                        placeholder="Tìm kiếm log / pipeline..."
                         value={dbLogsSearch}
                         onChange={(e) => setDbLogsSearch(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-900 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-cyan-500 transition-all"
+                        className="w-full bg-slate-950 border border-slate-900 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-cyan-500 transition-all font-mono"
                       />
                     </div>
 
                     <select
+                      value={dbLogsFilterPlatform}
+                      onChange={(e) => setDbLogsFilterPlatform(e.target.value)}
+                      className="bg-slate-950 border border-slate-900 rounded-lg px-2.5 py-1.5 text-[10.5px] text-slate-300 outline-none focus:border-cyan-500"
+                    >
+                      <option value="all">Platform: Tất cả</option>
+                      <option value="adf">ADF (Data Factory)</option>
+                      <option value="databricks">Databricks</option>
+                      <option value="power bi">Power BI</option>
+                      <option value="synapse">Synapse</option>
+                    </select>
+
+                    <select
                       value={dbLogsFilterStatus}
                       onChange={(e) => setDbLogsFilterStatus(e.target.value)}
-                      className="bg-slate-950 border border-slate-900 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-cyan-500"
+                      className="bg-slate-950 border border-slate-900 rounded-lg px-2.5 py-1.5 text-[10.5px] text-slate-300 outline-none focus:border-cyan-500"
                     >
-                      <option value="all">Trạng thái: Tất cả</option>
-                      <option value="success">Success (Thành công)</option>
-                      <option value="failed">Failed (Lỗi)</option>
-                      <option value="running">Running (Đang chạy)</option>
+                      <option value="all">Status: Tất cả</option>
+                      <option value="success">Success</option>
+                      <option value="failed">Failed</option>
+                      <option value="running">Running</option>
                     </select>
 
                     <select
                       value={dbLogsFilterSeverity}
                       onChange={(e) => setDbLogsFilterSeverity(e.target.value)}
-                      className="bg-slate-950 border border-slate-900 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-cyan-500"
+                      className="bg-slate-950 border border-slate-900 rounded-lg px-2.5 py-1.5 text-[10.5px] text-slate-300 outline-none focus:border-cyan-500"
                     >
-                      <option value="all">Độ nghiêm trọng: Tất cả</option>
-                      <option value="INFO">INFO (Thông tin)</option>
-                      <option value="WARNING">WARNING (Cảnh báo)</option>
-                      <option value="ERROR">ERROR (Lỗi hệ thống)</option>
-                      <option value="CRITICAL">CRITICAL (Nghiêm trọng)</option>
+                      <option value="all">Severity: Tất cả</option>
+                      <option value="INFO">INFO</option>
+                      <option value="WARNING">WARNING</option>
+                      <option value="ERROR">ERROR</option>
+                      <option value="CRITICAL">CRITICAL</option>
                     </select>
-                  </div>
-
-                  {/* Right: Direct Job Launchers */}
-                  <div className="flex items-center gap-2 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-900 pt-3 lg:pt-0 lg:pl-4">
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider mr-2 font-mono">Run:</span>
-                    <button
-                      onClick={() => handleTriggerJob("AX-Bronze-Ingestion")}
-                      className="flex items-center gap-1 px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-[10px] font-bold text-sky-400 border border-sky-500/15 shadow-sm transition-all"
-                    >
-                      <Play className="h-3 w-3" />
-                      1. Ingest Bronze
-                    </button>
-                    <button
-                      onClick={() => handleTriggerJob("dbt-Silver-Incremental-Core")}
-                      className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-[10px] font-bold text-indigo-400 border border-indigo-500/15 shadow-sm transition-all"
-                    >
-                      <Play className="h-3 w-3" />
-                      2. dbt Silver
-                    </button>
                   </div>
                 </div>
 
                 {/* 📑 TELEMETRY LOGS GRID LIST */}
-                <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                <div className="flex-1 overflow-y-auto pr-1 space-y-3">
                   {filteredLogs.length > 0 ? (
                     filteredLogs.map((log) => {
                       const relativeTime = (() => {
@@ -2293,34 +2254,42 @@ export default function DashboardPage() {
                         return new Date(log.started_at).toLocaleDateString("vi-VN");
                       })();
 
+                      const platformInfo = getPlatformInfo(log.job_name);
+
                       return (
                         <div
                           key={log.id}
-                          className="backdrop-blur-md bg-slate-950/45 border border-slate-900 rounded-2xl p-5 hover:border-slate-800 hover:bg-slate-950/65 transition-all duration-300 relative overflow-hidden group"
+                          className="backdrop-blur-md bg-slate-950/45 border border-slate-900 rounded-xl p-4.5 hover:border-slate-800 hover:bg-slate-950/65 transition-all duration-300 relative overflow-hidden group"
                         >
-                          {/* Top indicator bar matching status */}
-                          <div className={`absolute top-0 left-0 right-0 h-[2px] ${
-                            log.status === "success" ? "bg-emerald-500/40" : 
-                            log.status === "failed" ? "bg-rose-500/40 animate-pulse" : 
-                            "bg-sky-500/40 animate-pulse"
+                          {/* Left boundary matching platform theme color */}
+                          <div className={`absolute top-0 bottom-0 left-0 w-[3px] ${
+                            platformInfo.name === "ADF" ? "bg-cyan-500" : 
+                            platformInfo.name === "Power BI" ? "bg-amber-500" : 
+                            platformInfo.name === "Synapse" ? "bg-purple-500" : 
+                            "bg-indigo-500"
                           }`} />
 
                           {/* Card Header row */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                            <div className="flex flex-wrap items-center gap-2.5">
-                              <span className="font-mono text-xs font-black text-white uppercase tracking-wider">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3 pl-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Platform Badge */}
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider font-mono ${platformInfo.color}`}>
+                                {platformInfo.name}
+                              </span>
+
+                              <span className="font-mono text-xs font-black text-white tracking-wider">
                                 {log.job_name}
                               </span>
 
                               {/* Status Badge */}
-                              <span className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${
+                              <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[8.5px] font-black uppercase tracking-wider ${
                                 log.status === "success"
                                   ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
                                   : log.status === "failed"
                                   ? "border-rose-500/20 bg-rose-500/10 text-rose-400 animate-pulse"
                                   : "border-sky-500/20 bg-sky-500/10 text-sky-400"
                               }`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${
+                                <span className={`h-1 w-1 rounded-full ${
                                   log.status === "success" ? "bg-emerald-400" : 
                                   log.status === "failed" ? "bg-rose-400 animate-ping" : 
                                   "bg-sky-400 animate-spin"
@@ -2329,7 +2298,7 @@ export default function DashboardPage() {
                               </span>
 
                               {/* Severity Badge */}
-                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
                                 log.severity === "CRITICAL"
                                   ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
                                   : log.severity === "ERROR"
@@ -2342,32 +2311,32 @@ export default function DashboardPage() {
                               </span>
                             </div>
 
-                            <span className="text-[10px] text-slate-500 font-bold shrink-0 font-mono">
+                            <span className="text-[9px] text-slate-500 font-bold shrink-0 font-mono">
                               {relativeTime} ({new Date(log.started_at).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' })})
                             </span>
                           </div>
 
                           {/* Message box */}
-                          <div className={`rounded-xl p-3.5 font-mono text-[11px] leading-relaxed mb-4 ${
+                          <div className={`rounded-lg p-3 font-mono text-[10.5px] leading-relaxed mb-3 ml-1.5 ${
                             log.status === "failed"
-                              ? "bg-rose-950/15 border border-rose-900/50 text-rose-300"
-                              : "bg-slate-950/60 border border-slate-900/50 text-slate-300"
+                              ? "bg-rose-950/15 border border-rose-900/50 text-rose-350"
+                              : "bg-slate-950/60 border border-slate-900/30 text-slate-350"
                           }`}>
-                            <div className="flex items-start gap-2.5">
-                              <Terminal className={`h-4 w-4 mt-0.5 shrink-0 ${log.status === "failed" ? "text-rose-450" : "text-slate-500"}`} />
+                            <div className="flex items-start gap-2">
+                              <Terminal className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${log.status === "failed" ? "text-rose-400" : "text-slate-500"}`} />
                               <p className="whitespace-pre-wrap">{log.message}</p>
                             </div>
                           </div>
 
                           {/* Running Progress Bar Animation */}
                           {log.status === "running" && (
-                            <div className="w-full bg-slate-900 h-1 rounded-full overflow-hidden mb-4">
+                            <div className="w-full bg-slate-900 h-1 rounded-full overflow-hidden mb-3 ml-1.5">
                               <div className="bg-sky-500 h-full rounded-full animate-pulse" style={{ width: '45%' }} />
                             </div>
                           )}
 
                           {/* Card Footer metrics & Retry actions */}
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold border-t border-slate-900/40 pt-3 font-mono">
+                          <div className="flex items-center justify-between text-[9px] text-slate-500 font-bold border-t border-slate-900/40 pt-2.5 ml-1.5 font-mono">
                             <span className="uppercase tracking-wider">
                               Thời gian: <span className="text-slate-350 font-black">{log.duration} giây</span>
                             </span>
@@ -2375,9 +2344,9 @@ export default function DashboardPage() {
                             {log.status === "failed" && (
                               <button
                                 onClick={() => handleTriggerJob(log.job_name)}
-                                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-450 border border-rose-500/20 shadow-sm transition-all font-sans"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-455 border border-rose-500/20 shadow-sm transition-all font-sans"
                               >
-                                <Play className="h-3 w-3" />
+                                <Play className="h-2.5 w-2.5" />
                                 RETRY RUN
                               </button>
                             )}
@@ -2386,12 +2355,15 @@ export default function DashboardPage() {
                       );
                     })
                   ) : (
-                    <div className="flex flex-col items-center justify-center gap-3 p-12 border border-dashed border-slate-900 rounded-3xl bg-slate-950/10 text-slate-500">
-                      <Cpu className="h-8 w-8 text-slate-700 animate-pulse" />
-                      <p className="text-xs font-bold">Không tìm thấy logs nào phù hợp với bộ lọc.</p>
+                    <div className="flex flex-col items-center justify-center gap-3 p-12 border border-dashed border-slate-900 rounded-2xl bg-slate-950/10 text-slate-500">
+                      <Cpu className="h-6 w-6 text-slate-700 animate-pulse" />
+                      <div className="text-center space-y-1">
+                        <p className="text-xs font-bold text-slate-400">Hệ thống đang chờ log dữ liệu thực tế...</p>
+                        <p className="text-[10px] text-slate-500 max-w-sm">Hiện chưa có bản ghi log nào được đẩy về Supabase. Hãy kích hoạt các trigger thực tế trên Databricks / ADF hoặc bấm nút giả lập phía trên để kiểm nghiệm.</p>
+                      </div>
                       <button
-                        onClick={() => { setDbLogsFilterStatus("all"); setDbLogsFilterSeverity("all"); setDbLogsSearch(""); }}
-                        className="text-[10px] font-bold text-cyan-400 hover:underline"
+                        onClick={() => { setDbLogsFilterPlatform("all"); setDbLogsFilterStatus("all"); setDbLogsFilterSeverity("all"); setDbLogsSearch(""); }}
+                        className="text-[9px] font-bold text-cyan-400 hover:underline"
                       >
                         Reset Bộ Lọc
                       </button>
