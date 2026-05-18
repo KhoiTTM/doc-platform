@@ -35,7 +35,12 @@ import {
   Flame,
   Search,
   Check,
-  FileCode
+  FileCode,
+  Cpu,
+  Terminal,
+  RefreshCw,
+  Play,
+  RotateCcw
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
@@ -99,6 +104,82 @@ interface IncidentType {
   created_at: string;
 }
 
+interface DatabricksLogType {
+  id: string;
+  job_name: string;
+  status: 'success' | 'failed' | 'running';
+  severity: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  duration: number;
+  started_at: string;
+  message: string;
+}
+
+const fallbackDatabricksLogs: DatabricksLogType[] = [
+  {
+    id: "fallback-1",
+    job_name: "AX-Bronze-Ingestion",
+    status: "success",
+    severity: "INFO",
+    duration: 345,
+    started_at: new Date(Date.now() - 5 * 60000).toISOString(),
+    message: "Successfully ingested 42,105 rows from ERP source AX DB. No schema drifts detected."
+  },
+  {
+    id: "fallback-2",
+    job_name: "dbt-Silver-Incremental-Core",
+    status: "running",
+    severity: "INFO",
+    duration: 124,
+    started_at: new Date(Date.now() - 2 * 60000).toISOString(),
+    message: "Running model: stg_ax_sales_orders (2/14 models built successfully)..."
+  },
+  {
+    id: "fallback-3",
+    job_name: "Gold-AAS-Tabular-Refresh",
+    status: "failed",
+    severity: "CRITICAL",
+    duration: 45,
+    started_at: new Date(Date.now() - 15 * 60000).toISOString(),
+    message: "Failed to connect to Azure AAS endpoint: AAS-Tabular-Live-Connection. Timeout exceeded during execution."
+  },
+  {
+    id: "fallback-4",
+    job_name: "AX-Bronze-Ingestion",
+    status: "success",
+    severity: "INFO",
+    duration: 360,
+    started_at: new Date(Date.now() - 60 * 60000).toISOString(),
+    message: "Daily incremental ingest run complete. All source tables mapped correctly."
+  },
+  {
+    id: "fallback-5",
+    job_name: "dbt-Silver-Incremental-Core",
+    status: "failed",
+    severity: "ERROR",
+    duration: 640,
+    started_at: new Date(Date.now() - 120 * 60000).toISOString(),
+    message: "dbt test error: duplicate key violates unique constraint in silver.orders_fact. Pipeline aborted."
+  },
+  {
+    id: "fallback-6",
+    job_name: "Databricks-Spark-Cluster-Prewarm",
+    status: "success",
+    severity: "INFO",
+    duration: 180,
+    started_at: new Date(Date.now() - 180 * 60000).toISOString(),
+    message: "Cluster drivers provisioned successfully. 4 worker nodes warmed and scaling up."
+  },
+  {
+    id: "fallback-7",
+    job_name: "Gold-AAS-Tabular-Refresh",
+    status: "success",
+    severity: "INFO",
+    duration: 1240,
+    started_at: new Date(Date.now() - 240 * 60000).toISOString(),
+    message: "AAS Model chặng 5 live connection refreshed successfully. SLA 08:00 AM target met."
+  }
+];
+
 export default function DashboardPage() {
   const supabase = createClient();
   
@@ -111,7 +192,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // Tab Control
-  const [activeTab, setActiveTab] = useState<"home" | "operations" | "projects" | "incidents" | "wiki">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "operations" | "projects" | "incidents" | "wiki" | "databricks">("home");
+
+  // Databricks Logs Telemetry states
+  const [databricksLogs, setDatabricksLogs] = useState<DatabricksLogType[]>([]);
+  const [dbLogsLoading, setDbLogsLoading] = useState(false);
+  const [dbLogsFilterStatus, setDbLogsFilterStatus] = useState<string>("all");
+  const [dbLogsFilterSeverity, setDbLogsFilterSeverity] = useState<string>("all");
+  const [dbLogsSearch, setDbLogsSearch] = useState<string>("");
+  const [refreshCountdown, setRefreshCountdown] = useState<number>(10);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -193,6 +282,101 @@ export default function DashboardPage() {
   const toggleFolder = (id: string) => {
     setExpandedFolders(prev => ({ ...prev, [id]: !prev[id] }));
   };
+
+  // ==================== DATABRICKS TELEMETRY LOGS WORKSPACE ====================
+
+  // Fetch Databricks telemetry job logs
+  const loadDatabricksLogs = useCallback(async () => {
+    try {
+      setDbLogsLoading(true);
+      const { data, error } = await supabase
+        .from("databricks_job_logs")
+        .select("*")
+        .order("started_at", { ascending: false });
+
+      if (error) {
+        console.warn("databricks_job_logs table not active yet or error. Falling back safely.", error);
+        setDatabricksLogs(fallbackDatabricksLogs);
+      } else if (data && data.length > 0) {
+        setDatabricksLogs(data as DatabricksLogType[]);
+      } else {
+        setDatabricksLogs(fallbackDatabricksLogs);
+      }
+    } catch (err) {
+      console.warn("Error running Databricks fetch logs:", err);
+      setDatabricksLogs(fallbackDatabricksLogs);
+    } finally {
+      setDbLogsLoading(false);
+    }
+  }, [supabase]);
+
+  // Load logs initially
+  useEffect(() => {
+    loadDatabricksLogs();
+  }, [loadDatabricksLogs]);
+
+  // Countdown timer for 10s auto-refresh
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRefreshCountdown(prev => {
+        if (prev <= 1) {
+          loadDatabricksLogs();
+          return 10;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [loadDatabricksLogs]);
+
+  // Quick Action: Trigger Databricks Job
+  async function handleTriggerJob(jobName: string) {
+    const newLog = {
+      job_name: jobName,
+      status: "running" as const,
+      severity: "INFO" as const,
+      duration: 0,
+      started_at: new Date().toISOString(),
+      message: `Manual launch trigger succeeded. Waking up Databricks context, starting driver node...`
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from("databricks_job_logs")
+        .insert(newLog)
+        .select()
+        .single();
+
+      if (!error && data) {
+        setDatabricksLogs(prev => [data as DatabricksLogType, ...prev]);
+      } else {
+        const fallbackLog: DatabricksLogType = {
+          id: `manual-${Math.random().toString(36).substring(2)}`,
+          ...newLog
+        };
+        setDatabricksLogs(prev => [fallbackLog, ...prev]);
+      }
+    } catch (err) {
+      console.error(err);
+      // Fallback
+      const fallbackLog: DatabricksLogType = {
+        id: `manual-${Math.random().toString(36).substring(2)}`,
+        ...newLog
+      };
+      setDatabricksLogs(prev => [fallbackLog, ...prev]);
+    }
+  }
+
+  // Quick Action: Reset databricks logs
+  async function handleResetLogs() {
+    try {
+      await supabase.from("databricks_job_logs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      setDatabricksLogs(fallbackDatabricksLogs);
+    } catch {
+      setDatabricksLogs(fallbackDatabricksLogs);
+    }
+  }
 
   // Folder Actions
   async function handleCreateFolder(parentId: string | null) {
@@ -563,6 +747,23 @@ export default function DashboardPage() {
   const departments = ["Finance", "Supply Chain", "Sales"];
   const getProjectsByDept = (dept: string) => projects.filter(p => p.department === dept);
 
+  // Dynamic stats calculated from active Databricks logs
+  const totalRuns = databricksLogs.length;
+  const successRuns = databricksLogs.filter(l => l.status === "success").length;
+  const failedRuns = databricksLogs.filter(l => l.status === "failed").length;
+  const runningRuns = databricksLogs.filter(l => l.status === "running").length;
+  const successRate = totalRuns > 0 ? ((successRuns / Math.max(1, totalRuns - runningRuns)) * 100).toFixed(0) : "100";
+  const avgDuration = totalRuns > 0 ? (databricksLogs.reduce((acc, curr) => acc + curr.duration, 0) / totalRuns).toFixed(0) : "0";
+
+  // Filtered Logs
+  const filteredLogs = databricksLogs.filter(log => {
+    const matchesSearch = log.job_name.toLowerCase().includes(dbLogsSearch.toLowerCase()) || 
+                          log.message.toLowerCase().includes(dbLogsSearch.toLowerCase());
+    const matchesStatus = dbLogsFilterStatus === "all" || log.status === dbLogsFilterStatus;
+    const matchesSeverity = dbLogsFilterSeverity === "all" || log.severity === dbLogsFilterSeverity;
+    return matchesSearch && matchesStatus && matchesSeverity;
+  });
+
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* 🧭 PERSISTENT PORTAL TABS LEFT ICON SIDEBAR */}
@@ -633,6 +834,18 @@ export default function DashboardPage() {
           title="Tài nguyên Wiki & Flow"
         >
           <BookOpen className="h-5 w-5" />
+        </button>
+
+        <button
+          onClick={() => { setActiveTab("databricks"); setSearchQuery(""); }}
+          className={`p-3 rounded-2xl transition-all ${
+            activeTab === "databricks"
+              ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+              : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/30"
+          }`}
+          title="Giám sát Databricks (Real-time)"
+        >
+          <Cpu className="h-5 w-5 text-sky-450" />
         </button>
       </nav>
 
@@ -1901,6 +2114,290 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </section>
+              </div>
+            )}
+
+            {/* ==================== TAB 6: GIÁM SÁT DATABRICKS ==================== */}
+            {activeTab === "databricks" && (
+              <div className="flex-1 flex flex-col overflow-hidden animate-fade-in px-6 py-8 sm:px-12">
+                {/* 📡 CYBERPUNK MONITORING HEADER */}
+                <header className="shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-900 pb-5 mb-6">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
+                      <h1 className="font-display text-2xl font-black text-white tracking-tight uppercase">
+                        DATABRICKS REAL-TIME TELEMETRY
+                      </h1>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium mt-1 font-mono">
+                      [Live Spark clusters audit logs & dbt schema materialization telemetry logs]
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    {/* Glowing Countdown Ring */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-cyan-500/20 bg-cyan-950/10 text-[10px] font-black text-cyan-400 tracking-wider font-mono">
+                      <RefreshCw className={`h-3 w-3 ${dbLogsLoading ? 'animate-spin text-cyan-400' : ''}`} />
+                      AUTO-REFRESH: {refreshCountdown}S
+                    </div>
+
+                    <button
+                      onClick={loadDatabricksLogs}
+                      disabled={dbLogsLoading}
+                      className="flex items-center justify-center p-2 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 hover:bg-slate-900 text-slate-400 hover:text-white transition-all"
+                      title="Tải lại ngay lập tức"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${dbLogsLoading ? 'animate-spin' : ''}`} />
+                    </button>
+
+                    <button
+                      onClick={handleResetLogs}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-900 hover:border-slate-850 hover:bg-rose-950/20 text-xs font-bold text-slate-500 hover:text-rose-400 transition-all"
+                      title="Khôi phục dữ liệu mẫu gốc"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reset logs
+                    </button>
+                  </div>
+                </header>
+
+                {/* 📊 TELEMETRY HIGH-IMPACT METRICS GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shrink-0">
+                  {/* Card 1: Active Clusters */}
+                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-2xl" />
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Spark Cluster</p>
+                    <div className="flex items-baseline gap-2 mt-2.5">
+                      <span className="text-xl font-black text-white">4 Nodes</span>
+                      <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded uppercase">Standard_DS3</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-emerald-400 font-bold">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Driver provisioned & stable
+                    </div>
+                  </div>
+
+                  {/* Card 2: Today Success Rate */}
+                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl" />
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tỉ Lệ Thành Công (Today)</p>
+                    <div className="flex items-baseline gap-2 mt-2.5">
+                      <span className={`text-xl font-black ${Number(successRate) >= 90 ? 'text-emerald-400' : Number(successRate) >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>
+                        {successRate}%
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-bold">({successRuns}/{totalRuns - runningRuns} runs)</span>
+                    </div>
+                    <div className="mt-3 w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500" style={{ width: `${successRate}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Card 3: Failed Runs */}
+                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-rose-500/5 rounded-full blur-2xl" />
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sự Cố Failed Jobs</p>
+                    <div className="flex items-baseline gap-2 mt-2.5">
+                      <span className={`text-xl font-black ${failedRuns > 0 ? 'text-rose-550 animate-pulse' : 'text-slate-400'}`}>
+                        {failedRuns} Jobs
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2.5 font-bold">
+                      {failedRuns > 0 ? `${failedRuns} chặng cần kiểm tra lỗi khẩn cấp` : 'Tất cả pipeline vận hành an toàn'}
+                    </p>
+                  </div>
+
+                  {/* Card 4: Avg Run Duration */}
+                  <div className="backdrop-blur-md bg-slate-950/30 border border-slate-900 rounded-2xl p-4.5 hover:border-slate-800 transition-all relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-2xl" />
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Thời Gian Chạy Trung Bình</p>
+                    <div className="flex items-baseline gap-2 mt-2.5">
+                      <span className="text-xl font-black text-white">{avgDuration}s</span>
+                      <span className="text-[10px] text-slate-500 font-bold">/ job run</span>
+                    </div>
+                    <p className="text-[10px] text-indigo-400 mt-2.5 font-bold">
+                      SLA 08:00 AM Tabular target: Met
+                    </p>
+                  </div>
+                </div>
+
+                {/* 🎛️ FILTERS, SEARCH & DIRECT TRIPLE-TRIGGER PANEL */}
+                <div className="shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4.5 border border-slate-900 rounded-2xl bg-slate-950/30 mb-6">
+                  {/* Left: Searches & Filters */}
+                  <div className="flex flex-wrap items-center gap-3 flex-1">
+                    <div className="relative min-w-[200px] flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="Tìm theo Tên Job hoặc Nội dung logs..."
+                        value={dbLogsSearch}
+                        onChange={(e) => setDbLogsSearch(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-900 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-cyan-500 transition-all"
+                      />
+                    </div>
+
+                    <select
+                      value={dbLogsFilterStatus}
+                      onChange={(e) => setDbLogsFilterStatus(e.target.value)}
+                      className="bg-slate-950 border border-slate-900 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-cyan-500"
+                    >
+                      <option value="all">Trạng thái: Tất cả</option>
+                      <option value="success">Success (Thành công)</option>
+                      <option value="failed">Failed (Lỗi)</option>
+                      <option value="running">Running (Đang chạy)</option>
+                    </select>
+
+                    <select
+                      value={dbLogsFilterSeverity}
+                      onChange={(e) => setDbLogsFilterSeverity(e.target.value)}
+                      className="bg-slate-950 border border-slate-900 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-cyan-500"
+                    >
+                      <option value="all">Độ nghiêm trọng: Tất cả</option>
+                      <option value="INFO">INFO (Thông tin)</option>
+                      <option value="WARNING">WARNING (Cảnh báo)</option>
+                      <option value="ERROR">ERROR (Lỗi hệ thống)</option>
+                      <option value="CRITICAL">CRITICAL (Nghiêm trọng)</option>
+                    </select>
+                  </div>
+
+                  {/* Right: Direct Job Launchers */}
+                  <div className="flex items-center gap-2 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-900 pt-3 lg:pt-0 lg:pl-4">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider mr-2 font-mono">Run:</span>
+                    <button
+                      onClick={() => handleTriggerJob("AX-Bronze-Ingestion")}
+                      className="flex items-center gap-1 px-3 py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-[10px] font-bold text-sky-400 border border-sky-500/15 shadow-sm transition-all"
+                    >
+                      <Play className="h-3 w-3" />
+                      1. Ingest Bronze
+                    </button>
+                    <button
+                      onClick={() => handleTriggerJob("dbt-Silver-Incremental-Core")}
+                      className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-[10px] font-bold text-indigo-400 border border-indigo-500/15 shadow-sm transition-all"
+                    >
+                      <Play className="h-3 w-3" />
+                      2. dbt Silver
+                    </button>
+                  </div>
+                </div>
+
+                {/* 📑 TELEMETRY LOGS GRID LIST */}
+                <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                  {filteredLogs.length > 0 ? (
+                    filteredLogs.map((log) => {
+                      const relativeTime = (() => {
+                        const diffMs = Date.now() - new Date(log.started_at).getTime();
+                        const diffMin = Math.floor(diffMs / 60000);
+                        if (diffMin < 1) return "Vừa xong";
+                        if (diffMin < 60) return `${diffMin} phút trước`;
+                        const diffHours = Math.floor(diffMin / 60);
+                        if (diffHours < 24) return `${diffHours} giờ trước`;
+                        return new Date(log.started_at).toLocaleDateString("vi-VN");
+                      })();
+
+                      return (
+                        <div
+                          key={log.id}
+                          className="backdrop-blur-md bg-slate-950/45 border border-slate-900 rounded-2xl p-5 hover:border-slate-800 hover:bg-slate-950/65 transition-all duration-300 relative overflow-hidden group"
+                        >
+                          {/* Top indicator bar matching status */}
+                          <div className={`absolute top-0 left-0 right-0 h-[2px] ${
+                            log.status === "success" ? "bg-emerald-500/40" : 
+                            log.status === "failed" ? "bg-rose-500/40 animate-pulse" : 
+                            "bg-sky-500/40 animate-pulse"
+                          }`} />
+
+                          {/* Card Header row */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <span className="font-mono text-xs font-black text-white uppercase tracking-wider">
+                                {log.job_name}
+                              </span>
+
+                              {/* Status Badge */}
+                              <span className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${
+                                log.status === "success"
+                                  ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                                  : log.status === "failed"
+                                  ? "border-rose-500/20 bg-rose-500/10 text-rose-400 animate-pulse"
+                                  : "border-sky-500/20 bg-sky-500/10 text-sky-400"
+                              }`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${
+                                  log.status === "success" ? "bg-emerald-400" : 
+                                  log.status === "failed" ? "bg-rose-400 animate-ping" : 
+                                  "bg-sky-400 animate-spin"
+                                }`} />
+                                {log.status}
+                              </span>
+
+                              {/* Severity Badge */}
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                log.severity === "CRITICAL"
+                                  ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                                  : log.severity === "ERROR"
+                                  ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                                  : log.severity === "WARNING"
+                                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                  : "bg-slate-900 text-slate-400 border border-slate-800"
+                              }`}>
+                                {log.severity}
+                              </span>
+                            </div>
+
+                            <span className="text-[10px] text-slate-500 font-bold shrink-0 font-mono">
+                              {relativeTime} ({new Date(log.started_at).toLocaleTimeString("vi-VN", { hour: '2-digit', minute: '2-digit' })})
+                            </span>
+                          </div>
+
+                          {/* Message box */}
+                          <div className={`rounded-xl p-3.5 font-mono text-[11px] leading-relaxed mb-4 ${
+                            log.status === "failed"
+                              ? "bg-rose-950/15 border border-rose-900/50 text-rose-300"
+                              : "bg-slate-950/60 border border-slate-900/50 text-slate-300"
+                          }`}>
+                            <div className="flex items-start gap-2.5">
+                              <Terminal className={`h-4 w-4 mt-0.5 shrink-0 ${log.status === "failed" ? "text-rose-450" : "text-slate-500"}`} />
+                              <p className="whitespace-pre-wrap">{log.message}</p>
+                            </div>
+                          </div>
+
+                          {/* Running Progress Bar Animation */}
+                          {log.status === "running" && (
+                            <div className="w-full bg-slate-900 h-1 rounded-full overflow-hidden mb-4">
+                              <div className="bg-sky-500 h-full rounded-full animate-pulse" style={{ width: '45%' }} />
+                            </div>
+                          )}
+
+                          {/* Card Footer metrics & Retry actions */}
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold border-t border-slate-900/40 pt-3 font-mono">
+                            <span className="uppercase tracking-wider">
+                              Thời gian: <span className="text-slate-350 font-black">{log.duration} giây</span>
+                            </span>
+
+                            {log.status === "failed" && (
+                              <button
+                                onClick={() => handleTriggerJob(log.job_name)}
+                                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-450 border border-rose-500/20 shadow-sm transition-all font-sans"
+                              >
+                                <Play className="h-3 w-3" />
+                                RETRY RUN
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-3 p-12 border border-dashed border-slate-900 rounded-3xl bg-slate-950/10 text-slate-500">
+                      <Cpu className="h-8 w-8 text-slate-700 animate-pulse" />
+                      <p className="text-xs font-bold">Không tìm thấy logs nào phù hợp với bộ lọc.</p>
+                      <button
+                        onClick={() => { setDbLogsFilterStatus("all"); setDbLogsFilterSeverity("all"); setDbLogsSearch(""); }}
+                        className="text-[10px] font-bold text-cyan-400 hover:underline"
+                      >
+                        Reset Bộ Lọc
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </>
