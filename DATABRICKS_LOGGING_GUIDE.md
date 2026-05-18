@@ -1,57 +1,59 @@
-# 📘 Hướng dẫn Tích hợp & Đẩy Log từ Azure Databricks sang Supabase
-> **Dành cho Data Engineer / DataOps** để giám sát tự động trạng thái vận hành của Spark Cluster, dbt Transformation và các tiến trình ETL của hệ thống AX Data Platform.
+# Hướng dẫn Tích hợp & Đẩy Log từ Azure Databricks sang Supabase (WorkOS Portal)
+> **Dành cho Data Engineer / DataOps** để giám sát tự động trạng thái vận hành của Spark Cluster, dbt Ingestion và các tiến trình ETL của hệ thống AX Data Platform.
 
-Khi Azure Databricks thực thi các Job (notebook, file python hoặc dbt run), chúng ta có thể đẩy nhật ký (telemetry logs) trực tiếp vào bảng `databricks_job_logs` trên Supabase. Vì Supabase cung cấp một REST API (thông qua PostgREST) cực kỳ gọn nhẹ, cách tối ưu nhất là sử dụng thư viện **Python Requests** (không cần cài driver JDBC cồng kềnh).
+Để tích hợp hệ thống Azure Databricks vào cổng giám sát tập trung **WorkOS Platform**, các bản ghi nhật ký vận hành cần được đẩy trực tiếp vào bảng **`platform_monitor_logs`** trên Supabase. 
 
-Dưới đây là 3 phương pháp tích hợp thực tế kèm theo code mẫu chi tiết.
+Do bảng `platform_monitor_logs` đã được hợp nhất hóa để phục vụ đa nguồn (Databricks, Azure ADF, Synapse, Power BI), các tiến trình Databricks **bắt buộc phải cung cấp đầy đủ các cột phân lớp** (`source`, `category`) để tránh lỗi vi phạm ràng buộc `NOT NULL` của Database.
+
+Dưới đây là các phương pháp tích hợp thực tế đã được chuẩn hóa.
 
 ---
 
 ## 🔒 1. Quản lý Bảo mật Thông tin (Khuyến nghị)
-Không bao giờ được hardcode **Supabase URL** và **Anon Key** trực tiếp vào Notebook. Hãy lưu trữ chúng vào **Azure Key Vault**, sau đó liên kết với Databricks thông qua **Secret Scope**.
+Không bao giờ được hardcode trực tiếp **Supabase URL** và **Anon Key** vào Notebook. Hãy lưu trữ chúng vào **Azure Key Vault**, sau đó liên kết với Databricks thông qua **Secret Scope**.
 
-Trong Databricks Notebook, lấy thông tin bảo mật bằng cách sử dụng `dbutils`:
 ```python
-# Lấy thông tin kết nối từ Azure Key Vault qua Secret Scope của Databricks
+# Lấy thông tin kết nối an toàn từ Secret Scope của Databricks
 SUPABASE_URL = dbutils.secrets.get(scope="kv-doc-platform-scope", key="supabase-url")
 SUPABASE_KEY = dbutils.secrets.get(scope="kv-doc-platform-scope", key="supabase-anon-key")
 ```
 
 ---
 
-## 🐍 Phương pháp 1: Sử dụng Python Requests (Tối ưu & Gọn nhẹ nhất)
-Đây là cách khuyên dùng cho các Databricks Notebook viết bằng **PySpark / Python**. 
+## 🐍 Phương pháp 1: Sử dụng Python Requests (Khuyên dùng)
+Đây là cách tối ưu nhất cho các Databricks Notebook chạy **PySpark / Python**. Sử dụng thư viện `requests` giúp đẩy log cực nhanh qua REST API mà không cần cài driver JDBC cồng kềnh.
 
-Đoạn code dưới đây định nghĩa một Lớp Tiện ích (`SupabaseLogger`) giúp ghi nhận mốc thời gian bắt đầu, tính toán thời gian chạy (duration) và đẩy log lên Supabase một cách bất đồng bộ để **không bao giờ làm gián đoạn (crash) pipeline chính** nếu mạng bị lỗi.
+Lớp tiện ích `SupabaseWorkOSLogger` dưới đây được thiết kế defensive: **bắt toàn bộ ngoại lệ kết nối mạng để không bao giờ làm gián đoạn hay crash pipeline dữ liệu chính của bạn** nếu Supabase gặp sự cố.
 
-### Code mẫu trong Databricks Notebook:
+### Code mẫu chuẩn hóa trong Databricks Notebook:
 
 ```python
 import time
 import requests
 from datetime import datetime, timezone
 
-class SupabaseLogger:
-    def __init__(self, supabase_url, supabase_key, job_name):
+class SupabaseWorkOSLogger:
+    def __init__(self, supabase_url, supabase_key, job_name, category="job_run"):
         self.supabase_url = supabase_url.rstrip('/')
         self.supabase_key = supabase_key
         self.job_name = job_name
-        self.endpoint = f"{self.supabase_url}/rest/v1/databricks_job_logs"
+        self.category = category  # 'job_run' | 'cost_daily' | 'idle_session' | 'table_freshness' | 'pipeline'
+        self.endpoint = f"{self.supabase_url}/rest/v1/platform_monitor_logs"
         self.headers = {
             "apikey": self.supabase_key,
             "Authorization": f"Bearer {self.supabase_key}",
             "Content-Type": "application/json",
-            "Prefer": "return=minimal" # Tối ưu hóa hiệu năng, giảm băng thông phản hồi
+            "Prefer": "return=minimal" # Tối ưu hóa băng thông & tốc độ phản hồi
         }
         self.start_time = None
         self.started_at_str = None
 
     def start(self):
-        """Đánh dấu bắt đầu tiến trình"""
+        """Đánh dấu bắt đầu tiến trình chạy"""
         self.start_time = time.time()
         self.started_at_str = datetime.now(timezone.utc).isoformat()
         
-        # Ghi nhận log trạng thái 'running' ban đầu
+        # Ghi nhận log trạng thái 'running' ban đầu lên portal
         self.log(
             status="running",
             severity="INFO",
@@ -59,80 +61,88 @@ class SupabaseLogger:
             message=f"Pipeline '{self.job_name}' đã được kích hoạt thành công trên Spark cluster."
         )
 
-    def log(self, status, severity, duration, message):
-        """Đẩy log trực tiếp lên Supabase"""
+    def log(self, status, severity="INFO", duration=0, message="", metric_value=None):
+        """Đẩy log trực tiếp lên bảng platform_monitor_logs của Supabase"""
         payload = {
-            "job_name": self.job_name,
-            "status": status,          # 'success' | 'failed' | 'running'
-            "severity": severity,      # 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
-            "duration": int(duration), # Thời gian tính bằng giây
+            "source": "databricks",        # Bắt buộc cho việc định tuyến sang tab Databricks
+            "category": self.category,      # Bắt buộc (ví dụ: 'job_run')
+            "job_name": self.job_name,      # Tên Job hiển thị trên Dashboard
+            "status": status,              # 'success' | 'failed' | 'running' | 'warning'
+            "severity": severity,          # 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
+            "duration": int(duration),     # Thời gian chạy (giây)
             "started_at": self.started_at_str or datetime.now(timezone.utc).isoformat(),
-            "message": str(message)
+            "message": str(message),
+            "metric_value": metric_value   # Giá trị số tùy chọn (ví dụ: chi phí USD, hoặc giờ trễ dữ liệu)
         }
         
         try:
-            # Gửi HTTP POST request tới API của Supabase
             response = requests.post(
                 url=self.endpoint,
                 headers=self.headers,
                 json=payload,
-                timeout=10 # Tránh treo tiến trình ETL chính nếu mất kết nối
+                timeout=10 # Timeout 10s tránh làm treo tiến trình ETL chính
             )
             response.raise_for_status()
         except Exception as e:
-            # Phòng thủ lỗi: chỉ in ra màn hình cảnh báo, không để lỗi đẩy log làm sập cả Job ETL chính
-            print(f"[Supabase Logging Warning]: Không thể đẩy log lên Supabase: {str(e)}")
+            # Chỉ ghi nhận cảnh báo ra log cluster, tuyệt đối không để crash pipeline chính
+            print(f"[Supabase Ingestion Warning]: Không thể đẩy log lên WorkOS Portal: {str(e)}")
 
-    def stop_with_success(self, success_message="Tiến trình hoàn thành xuất sắc!"):
-        """Đánh dấu kết thúc thành công"""
+    def stop_with_success(self, success_message="Tiến trình hoàn thành xuất sắc!", metric_value=None):
+        """Kết thúc và ghi log thành công"""
         duration = time.time() - self.start_time if self.start_time else 0
         self.log(
             status="success",
             severity="INFO",
             duration=duration,
-            message=success_message
+            message=success_message,
+            metric_value=metric_value
         )
 
-    def stop_with_failure(self, error_message, severity="ERROR"):
-        """Đánh dấu kết thúc thất bại"""
+    def stop_with_failure(self, error_message, severity="ERROR", metric_value=None):
+        """Kết thúc và ghi log lỗi"""
         duration = time.time() - self.start_time if self.start_time else 0
         self.log(
             status="failed",
             severity=severity,
             duration=duration,
-            message=f"🚨 Tiến trình bị hủy do gặp lỗi nghiêm trọng!\nChi tiết: {error_message}"
+            message=f"🚨 Tiến trình bị hủy do lỗi nghiêm trọng!\nChi tiết: {error_message}",
+            metric_value=metric_value
         )
+```
 
-# ==========================================
-# SỬ DỤNG THỰC TẾ TRONG PIPELINE INGESTION:
-# ==========================================
+### Sử dụng thực tế trong Databricks Notebook:
 
-# 1. Khởi tạo logger
-logger = SupabaseLogger(
+```python
+# 1. Khởi tạo logger giám sát chạy Job ETL
+logger = SupabaseWorkOSLogger(
     supabase_url=SUPABASE_URL,
     supabase_key=SUPABASE_KEY,
-    job_name="AX-Bronze-Ingestion"
+    job_name="Databricks-Gold-FactSales-Update",
+    category="job_run"
 )
 
-# 2. Đánh dấu bắt đầu chạy
+# 2. Đánh dấu chạy và push log 'running'
 logger.start()
 
 try:
     # ----------------------------------------------------
-    # KHU VỰC CHẠY CODE PYSPARK CHÍNH CỦA BẠN:
-    print("Đang đọc dữ liệu từ nguồn AX ERP...")
-    # df = spark.read.format("sqlserver").load()
-    time.sleep(5) # Giả lập tiến trình đọc dữ liệu mất 5 giây
+    # KHU VỰC THỰC THI PYSPARK CODE CHÍNH CỦA BẠN:
+    print("Đang đọc Delta tables Silver...")
+    # df_silver = spark.read.table("silver.sales_orders")
+    time.sleep(6) # Giả lập Spark Transformation chạy 6 giây
     
-    print("Đang ghi dữ liệu vào Delta Lakehouse Bronze...")
-    # df.write.format("delta").mode("append").save("/mnt/bronze/erp_orders")
+    # Ghi nhận kết quả
+    rows_written = 24500
     # ----------------------------------------------------
     
-    # 3. Ghi log thành công
-    logger.stop_with_success("Đã tải thành công 45,210 dòng dữ liệu từ AX ERP vào Bronze Lakehouse.")
+    # 3. Gửi thông tin thành công lên WorkOS Portal
+    logger.stop_with_success(
+        success_message=f"Hoàn thành tổng hợp dữ liệu Gold FactSales. Ghi thành công {rows_written:,} dòng dữ liệu.",
+        metric_value=rows_written
+    )
 
 except Exception as ex:
-    # 4. Ghi log thất bại nếu gặp lỗi trong try block
+    # 4. Ghi nhận sự cố lập tức lên Incident Dashboard của WorkOS
     logger.stop_with_failure(error_message=str(ex), severity="CRITICAL")
     raise ex
 ```
@@ -140,63 +150,75 @@ except Exception as ex:
 ---
 
 ## 🗃️ Phương pháp 2: Sử dụng JDBC / Spark PostgreSQL Connector
-Nếu anh muốn ghi log trực tiếp bằng DataFrame của Spark SQL, anh có thể sử dụng driver PostgreSQL của Spark.
+Nếu muốn ghi log trực tiếp qua Spark DataFrame, bạn có thể ghi dữ liệu Spark DataFrame trực tiếp vào bảng Postgres `public.platform_monitor_logs`.
 
-> [!NOTE]
-> Để dùng cách này, Cluster Databricks của anh cần được cấu hình mở cổng kết nối tới Port `5432` của database Supabase và đã cài đặt thư viện Maven `org.postgresql:postgresql` trên cluster.
-
-### Code mẫu ghi log bằng Spark Write:
+> [!IMPORTANT]
+> Databricks Cluster cần được mở Port `5432` đi ra ngoài internet và đã cài thư viện Maven `org.postgresql:postgresql` trên cluster.
 
 ```python
-# Tạo DataFrame log bằng PySpark
+from datetime import datetime
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, TimestampType
+
+# 1. Định nghĩa Schema khớp chính xác với bảng platform_monitor_logs
+schema = StructType([
+    StructField("source", StringType(), False),
+    StructField("category", StringType(), False),
+    StructField("job_name", StringType(), False),
+    StructField("status", StringType(), False),
+    StructField("severity", StringType(), True),
+    StructField("duration", IntegerType(), True),
+    StructField("started_at", TimestampType(), True),
+    StructField("message", StringType(), True),
+    StructField("metric_value", DoubleType(), True)
+])
+
+# 2. Tạo record log
 log_data = [(
-    "dbt-Silver-Incremental-Core",
+    "databricks",
+    "job_run",
+    "Spark-Bronze-AX-Customers",
     "success",
     "INFO",
-    124, # duration tính theo giây
+    184, 
     datetime.now(),
-    "Spark SQL job hoàn tất kết xuất dữ liệu sang Silver Delta Table."
+    "Spark SQL job hoàn tất kết xuất dữ liệu khách hàng từ AX ERP sang Delta Table.",
+    15420.0 # Lưu trữ metric dòng dữ liệu
 )]
 
-columns = ["job_name", "status", "severity", "duration", "started_at", "message"]
-log_df = spark.createDataFrame(log_data, schema=columns)
+log_df = spark.createDataFrame(log_data, schema=schema)
 
-# Cấu hình kết nối Database Supabase
+# 3. Cấu hình kết nối PostgreSQL Supabase
 db_properties = {
-    "user": "postgres.your-supabase-project-id", # Lấy thông tin từ Supabase Database Settings
-    "password": "your-db-password",
+    "user": "postgres.ljqycbcvqfdgekufwolw", # Dự án Supabase của bạn
+    "password": "YOUR_DATABASE_PASSWORD",
     "driver": "org.postgresql.Driver"
 }
-jdbc_url = "jdbc:postgresql://db.your-supabase-project-id.supabase.co:5432/postgres"
+jdbc_url = "jdbc:postgresql://db.ljqycbcvqfdgekufwolw.supabase.co:5432/postgres"
 
-# Ghi đè hoặc append vào bảng databricks_job_logs
+# Ghi DataFrame trực tiếp vào bảng
 log_df.write \
-    .jdbc(url=jdbc_url, table="public.databricks_job_logs", properties=db_properties, mode="append")
+    .jdbc(url=jdbc_url, table="public.platform_monitor_logs", properties=db_properties, mode="append")
 ```
 
 ---
 
 ## 🛠️ Phương pháp 3: Sử dụng post-hook trong dbt (Data Build Tool)
-Nếu Databricks Job của anh được điều khiển bằng **dbt**, anh có thể chèn log trực tiếp sau khi hoàn thành chạy các models (dbt run) thông qua cấu hình **post-hook** trong tệp `dbt_project.yml`.
-
-> [!TIP]
-> Phương pháp này phù hợp cho việc giám sát tự động các tầng Silver/Gold khi biên dịch bảng logic.
+Nếu Databricks orchestrator của bạn được vận hành bằng **dbt CLI**, bạn có thể cấu hình tự động chèn log vào Supabase sau mỗi lần mô hình biên dịch hoàn tất thông qua cài đặt `post-hook` trong file `dbt_project.yml`.
 
 ### Cấu hình trong `dbt_project.yml`:
 
 ```yaml
-# Mỗi khi dbt hoàn tất chạy mô hình, tự động chèn 1 bản ghi vào Supabase
 models:
   ax_data_platform:
     +post-hook:
-      - "INSERT INTO public.databricks_job_logs (job_name, status, severity, duration, started_at, message) 
-         VALUES ('dbt-Silver-Transformation', 'success', 'INFO', 45, CURRENT_TIMESTAMP, 'dbt compiled successfully. Materialized schema {{ this.name }} to Delta Table format.')"
+      - "INSERT INTO public.platform_monitor_logs (source, category, job_name, status, severity, duration, started_at, message, metric_value) 
+         VALUES ('databricks', 'job_run', 'dbt-Gold-Analytics-Compile', 'success', 'INFO', 45, CURRENT_TIMESTAMP, 'dbt compiled successfully. Materialized schema {{ this.name }} to Lakehouse Delta format.', 0)"
 ```
 
 ---
 
-## 🔍 Kiểm tra trạng thái trên Cổng thông tin (Work OS Portal)
-Sau khi thiết lập một trong các phương pháp trên, các bản ghi log từ Azure Databricks sẽ ngay lập tức:
-1.  **Được chèn thời gian thực** vào cơ sở dữ liệu Supabase.
-2.  **Được tải lại tự động** trên trang **"Giám sát Databricks"** của Work OS Portal sau mỗi 10 giây.
-3.  **Tự động cập nhật tỉ lệ thành công** và thời gian chạy trung bình của hệ thống Data Platform tại Dashboard chính!
+## 🔍 Kiểm tra trạng thái trên Cổng thông tin (WorkOS Portal)
+Sau khi thiết lập, các bản ghi log từ Azure Databricks sẽ ngay lập tức:
+1. **Được chèn thời gian thực** vào Supabase.
+2. **Được hiển thị trực quan** ngay lập tức trên trang **"Giám sát Logs"** nhờ kết nối WebSockets thời gian thực siêu nhạy.
+3. **Cập nhật KPIs tức thì** trên màn hình Tổng Quan giúp các kỹ sư dữ liệu nắm bắt tức thì tình trạng sức khỏe của hệ thống!

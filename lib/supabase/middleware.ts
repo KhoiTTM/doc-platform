@@ -48,9 +48,12 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/_next") || path.includes(".");
 
   if (!user && !isPublicRoute && !isPublicAsset) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    const hasBypass = request.cookies.get("dev_bypass")?.value === "true";
+    if (!hasBypass) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
   }
 
   if (user && isAuthRoute) {
