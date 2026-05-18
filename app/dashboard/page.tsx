@@ -172,8 +172,8 @@ export default function DashboardPage() {
 
   // Operations (Tasks) Form States
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskBU, setNewTaskBU] = useState("Data Engineering");
-  const [newTaskRequester, setNewTaskRequester] = useState("CoolBlood");
+  const [newTaskBU, setNewTaskBU] = useState("");
+  const [newTaskRequester, setNewTaskRequester] = useState("");
   const [taskCreateLoading, setTaskCreateLoading] = useState(false);
 
   // Active Task Detail Workspace States
@@ -625,6 +625,8 @@ export default function DashboardPage() {
       
       if (error) throw error;
       setNewTaskTitle("");
+      setNewTaskBU("");
+      setNewTaskRequester("");
       setTasks(prev => [data, ...prev]);
     } catch (err) {
       alert("Lỗi khi thêm task!");
@@ -1041,7 +1043,7 @@ export default function DashboardPage() {
                         >
                           <span className="text-[10px] font-bold text-slate-500 bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded">{step.num}</span>
                           <p className="text-xs font-black text-white mt-2.5 truncate">{step.name}</p>
-                          <p className="text-[9px] text-slate-600">{step.platform}</p>
+                          <p className="text-[9px] text-slate-650">{step.platform}</p>
                         </div>
                       ))}
                     </div>
@@ -1056,8 +1058,8 @@ export default function DashboardPage() {
                 <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-900 pb-5">
                     <div className="space-y-1">
-                      <h1 className="font-display text-2xl font-black text-white">Vận Hành Hệ Thống (Operations)</h1>
-                      <p className="text-xs text-slate-400">Danh sách các tác vụ kiểm định chất lượng (QC) và vận hành pipeline hàng ngày.</p>
+                      <h1 className="font-display text-2xl font-black text-white">Daily Operations Hub</h1>
+                      <p className="text-xs text-slate-400">Manage operational workflow, quality check (QC) tasks, and data engineering pipelines.</p>
                     </div>
                   </div>
 
@@ -1069,7 +1071,7 @@ export default function DashboardPage() {
                           onClick={() => { setActiveTask(null); setIsEditingTask(false); }}
                           className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white transition-all bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-xl"
                         >
-                          <span>← Quay lại danh sách Task</span>
+                          <span>← Back to Task List</span>
                         </button>
                         <div className="flex items-center gap-2">
                           {isEditingTask ? (
@@ -1078,14 +1080,14 @@ export default function DashboardPage() {
                                 onClick={() => setIsEditingTask(false)}
                                 className="px-4 py-1.5 rounded-xl border border-slate-900 hover:border-slate-800 text-xs font-bold text-slate-400 hover:text-white transition-all"
                               >
-                                Hủy
+                                Cancel
                               </button>
                               <button
                                 onClick={handleUpdateTaskDetails}
                                 className="px-4 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-xs font-bold text-white shadow shadow-sky-500/10 transition-all flex items-center gap-1"
                               >
                                 <Save className="h-3.5 w-3.5" />
-                                Lưu Thay Đổi
+                                Save Changes
                               </button>
                             </>
                           ) : (
@@ -1094,7 +1096,7 @@ export default function DashboardPage() {
                               className="px-4 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center gap-1"
                             >
                               <Edit3 className="h-3.5 w-3.5 text-sky-400" />
-                              Chỉnh Sửa Task
+                              Edit Task
                             </button>
                           )}
                         </div>
@@ -1105,7 +1107,7 @@ export default function DashboardPage() {
                         {isEditingTask ? (
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="space-y-1.5 col-span-1 md:col-span-3">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Tiêu đề Tác Vụ</label>
+                              <label className="text-[10px] font-black uppercase text-slate-500">Task Title</label>
                               <input
                                 type="text"
                                 value={editTaskTitle}
@@ -1114,38 +1116,34 @@ export default function DashboardPage() {
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">BU / Phòng ban yêu cầu</label>
-                              <select
-                                value={editTaskBU}
-                                onChange={(e) => setEditTaskBU(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-900 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
-                              >
-                                <option value="Data Engineering">Data Engineering</option>
-                                <option value="Finance">Finance</option>
-                                <option value="Supply Chain">Supply Chain</option>
-                                <option value="Sales">Sales</option>
-                                <option value="IT Operations">IT Operations</option>
-                                <option value="Business Intelligence">Business Intelligence</option>
-                              </select>
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Người yêu cầu</label>
+                              <label className="text-[10px] font-black uppercase text-slate-500">Department (BU)</label>
                               <input
                                 type="text"
-                                value={editTaskRequester}
-                                onChange={(e) => setEditTaskRequester(e.target.value)}
+                                value={editTaskBU}
+                                onChange={(e) => setEditTaskBU(e.target.value)}
                                 className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
+                                placeholder="e.g. Sales, Finance, BI"
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-500">Trạng thái hiện tại</label>
+                              <label className="text-[10px] font-black uppercase text-slate-500">Assignee Email</label>
+                              <input
+                                type="email"
+                                value={editTaskRequester}
+                                onChange={(e) => setEditTaskRequester(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-900 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-sky-500 transition-all"
+                                placeholder="user@domain.com"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase text-slate-500">Current Status</label>
                               <div className="h-8.5 flex items-center">
                                 <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-md border ${
                                   activeTask.status === "done"
                                     ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
                                     : "border-amber-500/20 bg-amber-500/10 text-amber-400"
                                 }`}>
-                                  {activeTask.status === "done" ? "Đã hoàn thành" : "Đang xử lý (Todo)"}
+                                  {activeTask.status === "done" ? "Completed" : "Pending (Todo)"}
                                 </span>
                               </div>
                             </div>
@@ -1153,34 +1151,34 @@ export default function DashboardPage() {
                         ) : (
                           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">BU / Phòng ban</p>
+                              <p className="text-[9px] font-bold text-slate-500 uppercase">Department</p>
                               <p className="text-xs font-black text-white mt-1">{activeTask.bu || "Data"}</p>
                             </div>
                             <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Người yêu cầu</p>
-                              <p className="text-xs font-black text-white mt-1">{activeTask.requester || "CoolBlood"}</p>
+                              <p className="text-[9px] font-bold text-slate-500 uppercase">Assignee Email</p>
+                              <p className="text-xs font-black text-white mt-1 break-all">{activeTask.requester || "System"}</p>
                             </div>
                             <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Ngày yêu cầu</p>
+                              <p className="text-[9px] font-bold text-slate-500 uppercase">Created Date</p>
                               <p className="text-xs text-slate-300 mt-1">
-                                {activeTask.request_date ? new Date(activeTask.request_date).toLocaleDateString("vi-VN") : new Date(activeTask.due_date).toLocaleDateString("vi-VN")}
+                                {activeTask.request_date ? new Date(activeTask.request_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(activeTask.due_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })}
                               </p>
                             </div>
                             <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Ngày hoàn thành</p>
+                              <p className="text-[9px] font-bold text-slate-500 uppercase">Completed Date</p>
                               <p className="text-xs text-slate-300 mt-1">
-                                {activeTask.completion_date ? new Date(activeTask.completion_date).toLocaleDateString("vi-VN") : "—"}
+                                {activeTask.completion_date ? new Date(activeTask.completion_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : "—"}
                               </p>
                             </div>
                             <div>
-                              <p className="text-[9px] font-bold text-slate-500 uppercase">Trạng thái</p>
+                              <p className="text-[9px] font-bold text-slate-500 uppercase">Status</p>
                               <p className="mt-1">
                                 <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
                                   activeTask.status === "done"
                                     ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
                                     : "border-amber-500/20 bg-amber-500/10 text-amber-400"
                                 }`}>
-                                  {activeTask.status}
+                                  {activeTask.status.toUpperCase()}
                                 </span>
                               </p>
                             </div>
@@ -1192,22 +1190,22 @@ export default function DashboardPage() {
                       <div className="grid grid-cols-1 gap-6">
                         {isEditingTask ? (
                           <div className="space-y-3">
-                            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Đặc tả Yêu Cầu & Giải Pháp (Markdown Workspace)</span>
+                            <span className="text-xs font-black uppercase tracking-wider text-slate-400">Task Specifications & Resolution Details (Markdown Editor)</span>
                             
                             {/* Live Markdown Toolbar */}
                             <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-xl border border-slate-900 bg-slate-950/80">
-                              <button type="button" onClick={() => insertTaskMarkdown("**", "**")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chữ Đậm"><Bold className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("*", "*")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chữ Nghiêng"><Italic className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("# ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tiêu Đề 1"><Heading1 className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("## ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tiêu Đề 2"><Heading2 className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("**", "**")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Bold Text"><Bold className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("*", "*")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Italic Text"><Italic className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("# ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Heading 1"><Heading1 className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("## ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Heading 2"><Heading2 className="h-3.5 w-3.5" /></button>
                               <div className="h-4 w-px bg-slate-900" />
-                              <button type="button" onClick={() => insertTaskMarkdown("| Tiêu đề | Cột 2 |\n|---|---|\n| Giá trị 1 | Giá trị 2 |", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chèn Bảng"><TableIcon className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("```sql\n", "\n```")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Khối SQL Code"><CodeIcon className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("- ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Danh Sách Dòng"><ListIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("| Header | Column 2 |\n|---|---|\n| Value 1 | Value 2 |", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Insert Table Template"><TableIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("```sql\n", "\n```")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="SQL Code Block"><CodeIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("- ", "\n")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Bulleted List"><ListIcon className="h-3.5 w-3.5" /></button>
                               <div className="h-4 w-px bg-slate-900" />
-                              <button type="button" onClick={() => insertTaskMarkdown("<span style='color: #38bdf8'>", "</span>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Tô màu chữ Xanh"><Paintbrush className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => insertTaskMarkdown("<div align='center'>\n", "\n</div>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Canh Giữa"><AlignCenter className="h-3.5 w-3.5" /></button>
-                              <button type="button" onClick={() => triggerImagePicker("task")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Chèn Hình Ảnh"><ImageIcon className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("<span style='color: #38bdf8'>", "</span>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Highlight blue"><Paintbrush className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => insertTaskMarkdown("<div align='center'>\n", "\n</div>")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Center Align"><AlignCenter className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => triggerImagePicker("task")} className="p-2 text-slate-400 hover:text-white rounded hover:bg-slate-900" title="Upload/Insert Image"><ImageIcon className="h-3.5 w-3.5" /></button>
                             </div>
 
                             <textarea
@@ -1220,9 +1218,9 @@ export default function DashboardPage() {
                           </div>
                         ) : (
                           <div className="space-y-4">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Nội Dung Yêu Cầu & Giải Pháp</span>
-                            <div className="glass-card rounded-2xl border border-slate-900 p-6 sm:p-8 bg-slate-950/40 prose prose-invert prose-slate max-w-none text-slate-300">
-                              <ReactMarkdown>{activeTask.details_markdown || "*Chưa có mô tả yêu cầu hoặc giải pháp được ghi lại cho task này.*"}</ReactMarkdown>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Task Specifications & Resolution Details</span>
+                            <div className="glass-card rounded-2xl border border-slate-900 p-6 sm:p-8 bg-slate-950/40 prose prose-slate max-w-none text-slate-300">
+                              <ReactMarkdown>{activeTask.details_markdown || "*No description or solution details have been recorded for this task.*"}</ReactMarkdown>
                             </div>
                           </div>
                         )}
@@ -1235,30 +1233,26 @@ export default function DashboardPage() {
                         <input
                           type="text"
                           required
-                          placeholder="Thêm tác vụ vận hành mới cho hôm nay..."
+                          placeholder="Add new daily operations task..."
                           value={newTaskTitle}
                           onChange={(e) => setNewTaskTitle(e.target.value)}
                           className="flex-1 bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 outline-none focus:border-sky-500 transition-all"
                         />
-                        <select
-                          value={newTaskBU}
-                          onChange={(e) => setNewTaskBU(e.target.value)}
-                          className="bg-slate-950 border border-slate-900 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-sky-500 transition-all"
-                        >
-                          <option value="Data Engineering">Data Engineering</option>
-                          <option value="Finance">Finance</option>
-                          <option value="Supply Chain">Supply Chain</option>
-                          <option value="Sales">Sales</option>
-                          <option value="IT Operations">IT Operations</option>
-                          <option value="Business Intelligence">Business Intelligence</option>
-                        </select>
                         <input
                           type="text"
                           required
-                          placeholder="Người yêu cầu..."
+                          placeholder="Department (e.g. Sales, BI)..."
+                          value={newTaskBU}
+                          onChange={(e) => setNewTaskBU(e.target.value)}
+                          className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all md:w-48"
+                        />
+                        <input
+                          type="email"
+                          required
+                          placeholder="Assignee Email..."
                           value={newTaskRequester}
                           onChange={(e) => setNewTaskRequester(e.target.value)}
-                          className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 outline-none focus:border-sky-500 transition-all md:w-44"
+                          className="bg-slate-950 border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-650 outline-none focus:border-sky-500 transition-all md:w-60"
                         />
                         <button
                           type="submit"
@@ -1266,7 +1260,7 @@ export default function DashboardPage() {
                           className="px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-xs font-bold text-white shadow shadow-sky-500/10 transition-all shrink-0 flex items-center justify-center gap-1.5"
                         >
                           <Plus className="h-4 w-4" />
-                          Thêm Tác Vụ
+                          Add Task
                         </button>
                       </form>
 
@@ -1276,13 +1270,13 @@ export default function DashboardPage() {
                           <table className="w-full text-left border-collapse text-xs">
                             <thead>
                               <tr className="bg-slate-950/60 border-b border-slate-900 text-slate-500 uppercase tracking-widest font-black text-[10px]">
-                                <th className="p-4 w-12">Trạng thái</th>
-                                <th className="p-4">Nhiệm vụ kiểm tra (Tasks)</th>
-                                <th className="p-4 w-40">BU / Phòng ban</th>
-                                <th className="p-4 w-40">Người yêu cầu</th>
-                                <th className="p-4 w-32">Ngày yêu cầu</th>
-                                <th className="p-4 w-32">Ngày hoàn thành</th>
-                                <th className="p-4 text-right w-16">Thao tác</th>
+                                <th className="p-4 w-12">Status</th>
+                                <th className="p-4">Daily Operational Tasks</th>
+                                <th className="p-4 w-40">Department</th>
+                                <th className="p-4 w-48">Assignee Email</th>
+                                <th className="p-4 w-32">Created Date</th>
+                                <th className="p-4 w-32">Completed Date</th>
+                                <th className="p-4 text-right w-16">Action</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-900 bg-slate-950/10">
@@ -1319,19 +1313,19 @@ export default function DashboardPage() {
                                       {task.bu || "Data"}
                                     </span>
                                   </td>
-                                  <td className="p-4 whitespace-nowrap text-slate-300 font-medium">
-                                    {task.requester || "CoolBlood"}
+                                  <td className="p-4 whitespace-nowrap text-slate-300 font-medium break-all max-w-[12rem] overflow-hidden text-ellipsis">
+                                    {task.requester || "System"}
                                   </td>
                                   <td className="p-4 text-slate-400 whitespace-nowrap">
-                                    {task.request_date ? new Date(task.request_date).toLocaleDateString("vi-VN") : new Date(task.due_date).toLocaleDateString("vi-VN")}
+                                    {task.request_date ? new Date(task.request_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : new Date(task.due_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' })}
                                   </td>
                                   <td className="p-4 text-slate-400 whitespace-nowrap">
-                                    {task.completion_date ? new Date(task.completion_date).toLocaleDateString("vi-VN") : "—"}
+                                    {task.completion_date ? new Date(task.completion_date).toLocaleDateString("en-US", { year: 'numeric', month: 'short', day: 'numeric' }) : "—"}
                                   </td>
                                   <td className="p-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                     <button
                                       onClick={() => handleDeleteTask(task.id)}
-                                      className="p-1 rounded text-slate-600 hover:text-rose-400 hover:bg-rose-950/10 transition-all"
+                                      className="p-1 rounded text-slate-600 hover:text-rose-450 hover:bg-rose-950/10 transition-all"
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </button>
@@ -1341,7 +1335,7 @@ export default function DashboardPage() {
                               {tasks.length === 0 && (
                                 <tr>
                                   <td colSpan={7} className="p-8 text-center text-slate-600 italic">
-                                    Không có tác vụ nào được ghi nhận.
+                                    No operational tasks recorded.
                                   </td>
                                 </tr>
                               )}
